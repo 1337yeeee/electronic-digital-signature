@@ -14,6 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,50 @@ func TestUploadDocumentRouteRejectsNonDocxFile(t *testing.T) {
 	}
 	if body.Error.Message != "Document file must have .docx extension." {
 		t.Fatalf("unexpected error message: %q", body.Error.Message)
+	}
+}
+
+func TestUploadDocumentRouteRejectsUnsupportedMIMEType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, _ := generateECDSAKeyPairPEM(t)
+	router, _, _ := setupRouterWithDocumentHandler(privateKey)
+
+	response := performMultipartDocumentUploadWithOptions(t, router, "contract.docx", minimalDocx(t), "text/plain")
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "invalid_document_type" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
+	}
+	if body.Error.Message != "Document MIME type is not supported." {
+		t.Fatalf("unexpected error message: %q", body.Error.Message)
+	}
+}
+
+func TestUploadDocumentRouteRejectsTooLargeDocument(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, _ := generateECDSAKeyPairPEM(t)
+	router, _, _ := setupRouterWithDocumentHandler(privateKey)
+
+	tooLargeContent := bytes.Repeat([]byte("a"), usecase.MaxUploadDocumentSizeBytes+1)
+	response := performMultipartDocumentUploadWithOptions(t, router, "contract.docx", tooLargeContent, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "document_too_large" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
 	}
 }
 
@@ -507,6 +552,52 @@ func TestVerifyClientSignatureRouteRejectsInvalidBase64(t *testing.T) {
 	}
 }
 
+func TestVerifyClientSignatureRouteRejectsEmptyMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	requestBody := dto.VerifyClientSignatureRequest{
+		Message:         "   ",
+		SignatureBase64: base64.StdEncoding.EncodeToString([]byte("signature")),
+		PublicKey:       "public key",
+	}
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/signatures/verify", requestBody)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error != "message is required" {
+		t.Fatalf("unexpected error: %q", body.Error)
+	}
+}
+
+func TestVerifyClientSignatureRouteRejectsEmptyPublicKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	requestBody := dto.VerifyClientSignatureRequest{
+		Message:         "message",
+		SignatureBase64: base64.StdEncoding.EncodeToString([]byte("signature")),
+		PublicKey:       "   ",
+	}
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/signatures/verify", requestBody)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error != "public_key is required" {
+		t.Fatalf("unexpected error: %q", body.Error)
+	}
+}
+
 func TestIssueServerMessageRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)
@@ -758,6 +849,18 @@ func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, b
 func performMultipartDocumentUpload(t *testing.T, router *gin.Engine, fileName string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return performMultipartDocumentUploadWithOptions(
+		t,
+		router,
+		fileName,
+		minimalDocx(t),
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	)
+}
+
+func performMultipartDocumentUploadWithOptions(t *testing.T, router *gin.Engine, fileName string, content []byte, contentType string) *httptest.ResponseRecorder {
+	t.Helper()
+
 	var requestBody bytes.Buffer
 	writer := multipart.NewWriter(&requestBody)
 
@@ -768,11 +871,17 @@ func performMultipartDocumentUpload(t *testing.T, router *gin.Engine, fileName s
 		t.Fatalf("write recipient_email field: %v", err)
 	}
 
-	fileWriter, err := writer.CreateFormFile("file", fileName)
+	fileHeader := make(textproto.MIMEHeader)
+	fileHeader.Set("Content-Disposition", `form-data; name="file"; filename="`+fileName+`"`)
+	if contentType != "" {
+		fileHeader.Set("Content-Type", contentType)
+	}
+
+	fileWriter, err := writer.CreatePart(fileHeader)
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	if _, err := io.Copy(fileWriter, bytes.NewReader(minimalDocx(t))); err != nil {
+	if _, err := io.Copy(fileWriter, bytes.NewReader(content)); err != nil {
 		t.Fatalf("write form file: %v", err)
 	}
 	if err := writer.Close(); err != nil {

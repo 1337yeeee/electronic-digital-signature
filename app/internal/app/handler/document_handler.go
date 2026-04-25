@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -59,6 +60,18 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 		respondError(ctx, http.StatusBadRequest, "document_file_required", "Document file is required.")
 		return
 	}
+	if fileHeader.Size <= 0 {
+		respondError(ctx, http.StatusBadRequest, "document_file_required", "Document file is required.")
+		return
+	}
+	if fileHeader.Size > usecase.MaxUploadDocumentSizeBytes {
+		respondError(ctx, http.StatusBadRequest, "document_too_large", "Document file exceeds the maximum allowed size.")
+		return
+	}
+	if !strings.EqualFold(fileExtension(fileHeader.Filename), ".docx") {
+		respondError(ctx, http.StatusBadRequest, "invalid_document_type", "Document file must have .docx extension.")
+		return
+	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
@@ -71,6 +84,10 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 	mimeType := fileHeader.Header.Get("Content-Type")
 	if mimeType == "" {
 		mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	}
+	if !isAllowedUploadDocumentMIMEType(mimeType) {
+		respondError(ctx, http.StatusBadRequest, "invalid_document_type", "Document MIME type is not supported.")
+		return
 	}
 
 	document, err := h.uploadDocumentUseCase.Execute(ctx.Request.Context(), usecase.UploadDocumentInput{
@@ -223,4 +240,13 @@ func readPackageContent(ctx *gin.Context) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+func isAllowedUploadDocumentMIMEType(mimeType string) bool {
+	_, ok := usecase.AllowedUploadDocumentMIMETypes[strings.ToLower(strings.TrimSpace(mimeType))]
+	return ok
+}
+
+func fileExtension(fileName string) string {
+	return strings.ToLower(strings.TrimSpace(filepath.Ext(fileName)))
 }

@@ -12,6 +12,13 @@ import (
 	"electronic-digital-signature/internal/domain/model"
 )
 
+const MaxUploadDocumentSizeBytes = 10 << 20
+
+var AllowedUploadDocumentMIMETypes = map[string]struct{}{
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
+	"application/octet-stream": {},
+}
+
 type documentRepository interface {
 	Create(ctx context.Context, document *model.Document) error
 }

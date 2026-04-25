@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"electronic-digital-signature/internal/app/dto"
@@ -78,6 +79,27 @@ func (h *SignatureHandler) VerifyClientSignature(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
 			Valid: false,
 			Error: "invalid request body",
+		})
+		return
+	}
+	if strings.TrimSpace(request.Message) == "" {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "message is required",
+		})
+		return
+	}
+	if strings.TrimSpace(request.PublicKey) == "" {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "public_key is required",
+		})
+		return
+	}
+	if strings.TrimSpace(request.SignatureBase64) == "" {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "signature_base64 is required",
 		})
 		return
 	}
