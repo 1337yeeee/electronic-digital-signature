@@ -46,3 +46,35 @@ export DB_PASSWORD=postgres
 export DB_NAME=eds_lab
 export SSL_MODE=disable
 ```
+
+## Encrypted document package
+
+Documents are encrypted with AES-256-GCM. The current demo format uses a
+single-use random AES key and stores that key in the package as base64 with
+`key_transport: "plaintext_demo"`.
+
+This is only for the laboratory demo while recipient public-key encryption is
+not implemented yet. When recipient encryption is added, the AES key should be
+encrypted with the recipient public key and `key_transport` should change.
+
+Package JSON fields:
+
+```json
+{
+  "version": "1",
+  "document_id": "...",
+  "encryption_algorithm": "AES-256-GCM",
+  "key_transport": "plaintext_demo",
+  "encrypted_key_base64": "...",
+  "nonce_base64": "...",
+  "ciphertext_base64": "...",
+  "signature_base64": "...",
+  "hash_base64": "...",
+  "signature_algorithm": "ECDSA-SHA256",
+  "original_file_name": "document.docx",
+  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+}
+```
+
+When saved locally, the encrypted package file is named
+`<document_id>_encrypted_package.json`.

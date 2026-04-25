@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -36,6 +37,29 @@ func (s *LocalDocumentStorage) Save(ctx context.Context, id, originalFileName st
 
 	if _, err := io.Copy(file, readerWithContext{ctx: ctx, reader: content}); err != nil {
 		return "", fmt.Errorf("store document file: %w", err)
+	}
+
+	return path, nil
+}
+
+func (s *LocalDocumentStorage) SaveEncryptedPackage(ctx context.Context, documentID string, content []byte) (string, error) {
+	if s.basePath == "" {
+		return "", fmt.Errorf("document storage path is not configured")
+	}
+
+	if err := os.MkdirAll(s.basePath, 0o755); err != nil {
+		return "", fmt.Errorf("create document storage directory: %w", err)
+	}
+
+	path := filepath.Join(s.basePath, documentID+"_encrypted_package.json")
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create encrypted package file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, readerWithContext{ctx: ctx, reader: bytes.NewReader(content)}); err != nil {
+		return "", fmt.Errorf("store encrypted package file: %w", err)
 	}
 
 	return path, nil
