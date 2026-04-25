@@ -14,6 +14,7 @@ import (
 	"electronic-digital-signature/internal/infra/keys"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type verifyClientSignatureUseCase interface {
@@ -24,21 +25,28 @@ type issueServerSignedMessageUseCase interface {
 	Execute(ctx context.Context, message *model.Message) (signature []byte, messageHash []byte, err error)
 }
 
+type getServerSignedMessageUseCase interface {
+	Execute(ctx context.Context, id string) (*model.Message, error)
+}
+
 type SignatureHandler struct {
 	serverKeys                      keys.ServerKeyPair
 	verifyClientSignatureUseCase    verifyClientSignatureUseCase
 	issueServerSignedMessageUseCase issueServerSignedMessageUseCase
+	getServerSignedMessageUseCase   getServerSignedMessageUseCase
 }
 
 func NewSignatureHandler(
 	serverKeys keys.ServerKeyPair,
 	verifyClientSignatureUseCase verifyClientSignatureUseCase,
 	issueServerSignedMessageUseCase issueServerSignedMessageUseCase,
+	getServerSignedMessageUseCase getServerSignedMessageUseCase,
 ) *SignatureHandler {
 	return &SignatureHandler{
 		serverKeys:                      serverKeys,
 		verifyClientSignatureUseCase:    verifyClientSignatureUseCase,
 		issueServerSignedMessageUseCase: issueServerSignedMessageUseCase,
+		getServerSignedMessageUseCase:   getServerSignedMessageUseCase,
 	}
 }
 
@@ -133,12 +141,47 @@ func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dto.IssueServerMessageResponse{
-		ID:              message.ID,
+		MessageID:       message.ID,
 		CreatedAt:       message.CreatedAt.Format(time.RFC3339Nano),
 		Message:         message.Message,
 		Algorithm:       signaturecrypto.ECDSASHA256Algorithm,
 		HashBase64:      base64.StdEncoding.EncodeToString(messageHash),
 		SignatureBase64: base64.StdEncoding.EncodeToString(signature),
+	})
+}
+
+func (h *SignatureHandler) GetServerMessage(ctx *gin.Context) {
+	if h.getServerSignedMessageUseCase == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "get server signed message usecase is not configured",
+		})
+		return
+	}
+
+	messageID := ctx.Param("id")
+	if messageID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message id is required"})
+		return
+	}
+
+	message, err := h.getServerSignedMessageUseCase.Execute(ctx.Request.Context(), messageID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "message not found"})
+			return
+		}
+
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dto.IssueServerMessageResponse{
+		MessageID:       message.ID,
+		CreatedAt:       message.CreatedAt.Format(time.RFC3339Nano),
+		Message:         message.Message,
+		Algorithm:       signaturecrypto.ECDSASHA256Algorithm,
+		HashBase64:      base64.StdEncoding.EncodeToString(message.Hash),
+		SignatureBase64: base64.StdEncoding.EncodeToString(message.Signature),
 	})
 }
 

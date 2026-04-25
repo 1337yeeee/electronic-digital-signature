@@ -47,6 +47,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 		id.NewUUIDGenerator(),
 		"server",
 	)
+	getServerSignedMessageUseCase := usecase.NewGetServerSignedMessageUseCase(messageRepository)
 
 	return &AppContainer{
 		ServerKeys:        serverKeys,
@@ -56,6 +57,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 			serverKeys,
 			verifyClientSignatureUseCase,
 			issueServerSignedMessageUseCase,
+			getServerSignedMessageUseCase,
 		),
 	}, nil
 }

@@ -20,6 +20,7 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	if appContainer == nil || appContainer.SignatureHandler == nil {
 		api.GET("/server/public-key", handlerNotConfigured)
 		api.POST("/server/messages", handlerNotConfigured)
+		api.GET("/server/messages/:id", handlerNotConfigured)
 		api.POST("/signatures/verify", handlerNotConfigured)
 		return r
 	}
@@ -27,6 +28,7 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	signatureHandler := appContainer.SignatureHandler
 	api.GET("/server/public-key", signatureHandler.GetServerPublicKey)
 	api.POST("/server/messages", signatureHandler.IssueServerMessage)
+	api.GET("/server/messages/:id", signatureHandler.GetServerMessage)
 	api.POST("/signatures/verify", signatureHandler.VerifyClientSignature)
 
 	return r

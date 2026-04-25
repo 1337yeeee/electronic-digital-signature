@@ -23,6 +23,7 @@ import (
 	"electronic-digital-signature/internal/infra/keys"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func TestHealthRoute(t *testing.T) {
@@ -201,8 +202,8 @@ func TestIssueServerMessageRoute(t *testing.T) {
 	}
 
 	body := decodeIssueServerMessageResponse(t, response)
-	if body.ID != "00000000-0000-4000-8000-000000000001" {
-		t.Fatalf("expected response id from generator, got %q", body.ID)
+	if body.MessageID != "00000000-0000-4000-8000-000000000001" {
+		t.Fatalf("expected message_id from generator, got %q", body.MessageID)
 	}
 	if _, err := time.Parse(time.RFC3339Nano, body.CreatedAt); err != nil {
 		t.Fatalf("parse created_at: %v", err)
@@ -218,11 +219,67 @@ func TestIssueServerMessageRoute(t *testing.T) {
 	if len(messageRepository.messages) != 1 {
 		t.Fatalf("expected 1 saved message, got %d", len(messageRepository.messages))
 	}
-	if messageRepository.messages[0].ID != body.ID {
-		t.Fatalf("expected saved message id %q, got %q", body.ID, messageRepository.messages[0].ID)
+	if messageRepository.messages[0].ID != body.MessageID {
+		t.Fatalf("expected saved message id %q, got %q", body.MessageID, messageRepository.messages[0].ID)
 	}
 	if len(messageRepository.messages[0].Signature) == 0 {
 		t.Fatal("expected saved message signature")
+	}
+}
+
+func TestGetServerMessageRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	router, _ := setupRouterWithSignatureHandlerAndRepository(keys.ServerKeyPair{
+		PrivateKey: privateKey,
+		PublicKey:  publicKey,
+	})
+
+	createResponse := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{
+		Message: "traceable server message",
+	})
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("expected create status %d, got %d", http.StatusOK, createResponse.Code)
+	}
+	created := decodeIssueServerMessageResponse(t, createResponse)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/server/messages/"+created.MessageID, nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	body := decodeIssueServerMessageResponse(t, response)
+	if body.MessageID != created.MessageID {
+		t.Fatalf("expected message_id %q, got %q", created.MessageID, body.MessageID)
+	}
+	if body.Message != created.Message {
+		t.Fatalf("expected message %q, got %q", created.Message, body.Message)
+	}
+	if body.HashBase64 != created.HashBase64 {
+		t.Fatalf("expected hash %q, got %q", created.HashBase64, body.HashBase64)
+	}
+	if body.SignatureBase64 != created.SignatureBase64 {
+		t.Fatalf("expected signature %q, got %q", created.SignatureBase64, body.SignatureBase64)
+	}
+
+	assertServerMessageSignature(t, body, publicKey)
+}
+
+func TestGetServerMessageRouteReturnsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/server/messages/missing", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, response.Code)
 	}
 }
 
@@ -314,6 +371,7 @@ func setupRouterWithSignatureHandlerAndRepository(serverKeys keys.ServerKeyPair)
 				fakeIDGenerator{id: "00000000-0000-4000-8000-000000000001"},
 				"server",
 			),
+			usecase.NewGetServerSignedMessageUseCase(messageRepository),
 		),
 	})
 
@@ -405,6 +463,16 @@ type fakeMessageRepository struct {
 func (r *fakeMessageRepository) Create(_ context.Context, message *model.Message) error {
 	r.messages = append(r.messages, *message)
 	return nil
+}
+
+func (r *fakeMessageRepository) FindByID(_ context.Context, id string) (*model.Message, error) {
+	for i := range r.messages {
+		if r.messages[i].ID == id {
+			return &r.messages[i], nil
+		}
+	}
+
+	return nil, gorm.ErrRecordNotFound
 }
 
 type fakeIDGenerator struct {

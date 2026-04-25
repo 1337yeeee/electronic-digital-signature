@@ -21,7 +21,7 @@ type IssueServerMessageRequest struct {
 }
 
 type IssueServerMessageResponse struct {
-	ID              string `json:"id"`
+	MessageID       string `json:"message_id"`
 	CreatedAt       string `json:"created_at"`
 	Message         string `json:"message"`
 	Algorithm       string `json:"algorithm"`
