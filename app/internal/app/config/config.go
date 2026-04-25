@@ -19,7 +19,13 @@ type Config struct {
 
 	JWTSecret string
 
-	Redis RedisConfig
+	ServerKeys ServerKeysConfig
+	Redis      RedisConfig
+}
+
+type ServerKeysConfig struct {
+	PrivateKeyPath string
+	PublicKeyPath  string
 }
 
 type RedisConfig struct {
@@ -44,6 +50,11 @@ func Load() (Config, error) {
 		SSLMode:    os.Getenv("SSL_MODE"),
 
 		JWTSecret: os.Getenv("JWT_SECRET"),
+
+		ServerKeys: ServerKeysConfig{
+			PrivateKeyPath: os.Getenv("SERVER_PRIVATE_KEY_PATH"),
+			PublicKeyPath:  os.Getenv("SERVER_PUBLIC_KEY_PATH"),
+		},
 
 		Redis: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),
