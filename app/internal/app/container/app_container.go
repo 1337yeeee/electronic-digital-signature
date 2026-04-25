@@ -75,6 +75,11 @@ func New(cfg config.Config) (*AppContainer, error) {
 		encryption.NewDocumentEncryptor(documentStorage),
 		smtpMailer,
 	)
+	verifyDecryptPackageUseCase := usecase.NewVerifyDecryptPackageUseCase(
+		encryption.NewAESGCMEncryptor(),
+		signatureProvider,
+		serverKeys.PublicKey,
+	)
 
 	return &AppContainer{
 		ServerKeys:         serverKeys,
@@ -88,6 +93,6 @@ func New(cfg config.Config) (*AppContainer, error) {
 			issueServerSignedMessageUseCase,
 			getServerSignedMessageUseCase,
 		),
-		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase, sendDocumentUseCase),
+		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase, sendDocumentUseCase, verifyDecryptPackageUseCase),
 	}, nil
 }

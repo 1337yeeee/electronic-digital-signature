@@ -21,3 +21,21 @@ type SendDocumentResponse struct {
 	SendStatus     string `json:"send_status"`
 	SentAt         string `json:"sent_at,omitempty"`
 }
+
+type VerifyDecryptPackageMetadata struct {
+	DocumentID          string `json:"document_id"`
+	Version             string `json:"version"`
+	EncryptionAlgorithm string `json:"encryption_algorithm"`
+	KeyTransport        string `json:"key_transport"`
+	SignatureAlgorithm  string `json:"signature_algorithm"`
+	OriginalFileName    string `json:"original_file_name"`
+	MimeType            string `json:"mime_type"`
+	HashBase64          string `json:"hash_base64"`
+}
+
+type VerifyDecryptPackageResponse struct {
+	Valid                   bool                         `json:"valid"`
+	Error                   string                       `json:"error,omitempty"`
+	Metadata                VerifyDecryptPackageMetadata `json:"metadata"`
+	DecryptedDocumentBase64 string                       `json:"decrypted_document_base64,omitempty"`
+}

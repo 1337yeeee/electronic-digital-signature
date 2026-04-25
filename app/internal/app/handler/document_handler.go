@@ -2,8 +2,12 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"electronic-digital-signature/internal/app/dto"
@@ -22,15 +26,25 @@ type sendDocumentUseCase interface {
 	Execute(ctx context.Context, input usecase.SendDocumentInput) (*usecase.SendDocumentResult, error)
 }
 
-type DocumentHandler struct {
-	uploadDocumentUseCase uploadDocumentUseCase
-	sendDocumentUseCase   sendDocumentUseCase
+type verifyDecryptPackageUseCase interface {
+	Execute(ctx context.Context, input usecase.VerifyDecryptPackageInput) (*usecase.VerifyDecryptPackageResult, error)
 }
 
-func NewDocumentHandler(uploadDocumentUseCase uploadDocumentUseCase, sendDocumentUseCase sendDocumentUseCase) *DocumentHandler {
+type DocumentHandler struct {
+	uploadDocumentUseCase       uploadDocumentUseCase
+	sendDocumentUseCase         sendDocumentUseCase
+	verifyDecryptPackageUseCase verifyDecryptPackageUseCase
+}
+
+func NewDocumentHandler(
+	uploadDocumentUseCase uploadDocumentUseCase,
+	sendDocumentUseCase sendDocumentUseCase,
+	verifyDecryptPackageUseCase verifyDecryptPackageUseCase,
+) *DocumentHandler {
 	return &DocumentHandler{
-		uploadDocumentUseCase: uploadDocumentUseCase,
-		sendDocumentUseCase:   sendDocumentUseCase,
+		uploadDocumentUseCase:       uploadDocumentUseCase,
+		sendDocumentUseCase:         sendDocumentUseCase,
+		verifyDecryptPackageUseCase: verifyDecryptPackageUseCase,
 	}
 }
 
@@ -117,4 +131,76 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {
+	if h.verifyDecryptPackageUseCase == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "verify decrypt package usecase is not configured"})
+		return
+	}
+
+	packageContent, err := readPackageContent(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := h.verifyDecryptPackageUseCase.Execute(ctx.Request.Context(), usecase.VerifyDecryptPackageInput{
+		PackageContent: packageContent,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := dto.VerifyDecryptPackageResponse{
+		Valid: result.Valid,
+		Error: result.Error,
+		Metadata: dto.VerifyDecryptPackageMetadata{
+			DocumentID:          result.Metadata.DocumentID,
+			Version:             result.Metadata.Version,
+			EncryptionAlgorithm: result.Metadata.EncryptionAlgorithm,
+			KeyTransport:        result.Metadata.KeyTransport,
+			SignatureAlgorithm:  result.Metadata.SignatureAlgorithm,
+			OriginalFileName:    result.Metadata.OriginalFileName,
+			MimeType:            result.Metadata.MimeType,
+			HashBase64:          result.Metadata.HashBase64,
+		},
+	}
+	if result.Valid {
+		response.DecryptedDocumentBase64 = base64.StdEncoding.EncodeToString(result.DecryptedDocument)
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+func readPackageContent(ctx *gin.Context) ([]byte, error) {
+	contentType := ctx.GetHeader("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		fileHeader, err := ctx.FormFile("package")
+		if err != nil {
+			fileHeader, err = ctx.FormFile("file")
+			if err != nil {
+				return nil, fmt.Errorf("package file is required")
+			}
+		}
+
+		file, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open package file")
+		}
+		defer file.Close()
+
+		return io.ReadAll(file)
+	}
+
+	content, err := io.ReadAll(ctx.Request.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read package body: %w", err)
+	}
+	if len(content) == 0 {
+		return nil, fmt.Errorf("package json is required")
+	}
+
+	return content, nil
 }

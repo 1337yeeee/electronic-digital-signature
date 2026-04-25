@@ -25,6 +25,7 @@ import (
 	"electronic-digital-signature/internal/domain/model"
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/docx"
+	"electronic-digital-signature/internal/infra/encryption"
 	"electronic-digital-signature/internal/infra/keys"
 
 	"github.com/gin-gonic/gin"
@@ -147,6 +148,7 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
 			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, nil, nil, mailer),
+			nil,
 		),
 	})
 
@@ -212,6 +214,7 @@ func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
 			usecase.NewSendDocumentUseCase(&fakeDocumentRepository{}, &fakeDocumentStorage{}, nil, nil, nil, &fakeMailer{}),
+			nil,
 		),
 	})
 
@@ -221,6 +224,114 @@ func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, response.Code)
+	}
+}
+
+func TestVerifyDecryptPackageRouteAcceptsPackageJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	documentContent := []byte("decrypted document bytes")
+	packageContent := encryptedPackageContent(t, privateKey, documentContent)
+	router := setupRouterWithVerifyDecryptPackageHandler(publicKey)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/documents/verify-decrypt", bytes.NewReader(packageContent))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var body dto.VerifyDecryptPackageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !body.Valid {
+		t.Fatalf("expected package to be valid, got error %q", body.Error)
+	}
+	if body.Metadata.DocumentID != "document-id" {
+		t.Fatalf("expected document metadata, got %+v", body.Metadata)
+	}
+	if body.Metadata.EncryptionAlgorithm != encryption.AESGCMAlgorithm {
+		t.Fatalf("expected encryption algorithm %q, got %q", encryption.AESGCMAlgorithm, body.Metadata.EncryptionAlgorithm)
+	}
+
+	decryptedDocument, err := base64.StdEncoding.DecodeString(body.DecryptedDocumentBase64)
+	if err != nil {
+		t.Fatalf("decode decrypted document: %v", err)
+	}
+	if string(decryptedDocument) != string(documentContent) {
+		t.Fatalf("expected decrypted document %q, got %q", documentContent, decryptedDocument)
+	}
+}
+
+func TestVerifyDecryptPackageRouteAcceptsPackageFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	documentContent := []byte("docx bytes from multipart package")
+	packageContent := encryptedPackageContent(t, privateKey, documentContent)
+	router := setupRouterWithVerifyDecryptPackageHandler(publicKey)
+
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	fileWriter, err := writer.CreateFormFile("package", "document-id_encrypted_package.json")
+	if err != nil {
+		t.Fatalf("create package file field: %v", err)
+	}
+	if _, err := fileWriter.Write(packageContent); err != nil {
+		t.Fatalf("write package file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/documents/verify-decrypt", &requestBody)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var body dto.VerifyDecryptPackageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !body.Valid {
+		t.Fatalf("expected package to be valid, got error %q", body.Error)
+	}
+}
+
+func TestVerifyDecryptPackageRouteReturnsInvalidForWrongServerPublicKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, _ := generateECDSAKeyPairPEM(t)
+	_, wrongPublicKey := generateECDSAKeyPairPEM(t)
+	packageContent := encryptedPackageContent(t, privateKey, []byte("document bytes"))
+	router := setupRouterWithVerifyDecryptPackageHandler(wrongPublicKey)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/documents/verify-decrypt", bytes.NewReader(packageContent))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var body dto.VerifyDecryptPackageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Valid {
+		t.Fatal("expected package to be invalid")
+	}
+	if body.DecryptedDocumentBase64 != "" {
+		t.Fatalf("expected invalid response without decrypted document, got %q", body.DecryptedDocumentBase64)
 	}
 }
 
@@ -573,10 +684,27 @@ func setupRouterWithDocumentHandler(privateKey []byte) (*gin.Engine, *fakeDocume
 				privateKey,
 			),
 			nil,
+			nil,
 		),
 	})
 
 	return router, documentRepository, documentStorage
+}
+
+func setupRouterWithVerifyDecryptPackageHandler(publicKey []byte) *gin.Engine {
+	signatureProvider := crypto.NewECDSASHA256Provider()
+
+	return SetupRouter(&container.AppContainer{
+		DocumentHandler: handler.NewDocumentHandler(
+			nil,
+			nil,
+			usecase.NewVerifyDecryptPackageUseCase(
+				encryption.NewAESGCMEncryptor(),
+				signatureProvider,
+				publicKey,
+			),
+		),
+	})
 }
 
 func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
@@ -638,6 +766,34 @@ func decodeIssueServerMessageResponse(t *testing.T, response *httptest.ResponseR
 	}
 
 	return body
+}
+
+func encryptedPackageContent(t *testing.T, privateKey []byte, documentContent []byte) []byte {
+	t.Helper()
+
+	signatureProvider := crypto.NewECDSASHA256Provider()
+	signature, err := signatureProvider.Sign(documentContent, privateKey)
+	if err != nil {
+		t.Fatalf("sign document content: %v", err)
+	}
+
+	pkg, err := encryption.NewAESGCMEncryptor().EncryptDocument(model.Document{
+		ID:               "document-id",
+		OriginalFileName: "contract.docx",
+		MimeType:         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		Hash:             signatureProvider.Hash(documentContent),
+		Signature:        signature,
+	}, documentContent)
+	if err != nil {
+		t.Fatalf("encrypt document package: %v", err)
+	}
+
+	encodedPackage, err := encryption.EncodePackage(pkg)
+	if err != nil {
+		t.Fatalf("encode package: %v", err)
+	}
+
+	return encodedPackage
 }
 
 func assertServerMessageSignature(t *testing.T, body dto.IssueServerMessageResponse, publicKey []byte) {
