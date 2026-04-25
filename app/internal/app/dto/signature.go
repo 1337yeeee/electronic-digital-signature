@@ -12,8 +12,8 @@ type VerifyClientSignatureResponse struct {
 }
 
 type ServerPublicKeyResponse struct {
-	Algorithm       string `json:"algorithm"`
-	PublicKeyBase64 string `json:"public_key_base64"`
+	Algorithm    string `json:"algorithm"`
+	PublicKeyPEM string `json:"public_key_pem"`
 }
 
 type IssueServerMessageRequest struct {
