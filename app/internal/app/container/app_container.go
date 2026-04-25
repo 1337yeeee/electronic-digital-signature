@@ -8,8 +8,10 @@ import (
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/database"
 	"electronic-digital-signature/internal/infra/docx"
+	"electronic-digital-signature/internal/infra/encryption"
 	"electronic-digital-signature/internal/infra/id"
 	"electronic-digital-signature/internal/infra/keys"
+	"electronic-digital-signature/internal/infra/mailer"
 	"electronic-digital-signature/internal/infra/storage"
 
 	"gorm.io/gorm"
@@ -22,6 +24,7 @@ type AppContainer struct {
 	DocumentRepository *repository.DocumentRepository
 	SignatureHandler   *handler.SignatureHandler
 	DocumentHandler    *handler.DocumentHandler
+	Mailer             *mailer.SMTPMailer
 }
 
 func New(cfg config.Config) (*AppContainer, error) {
@@ -43,6 +46,8 @@ func New(cfg config.Config) (*AppContainer, error) {
 
 	messageRepository := repository.NewMessageRepository(db)
 	documentRepository := repository.NewDocumentRepository(db)
+	smtpMailer := mailer.NewSMTPMailer(cfg.SMTP)
+	documentStorage := storage.NewLocalDocumentStorage(cfg.DocumentStorage.Path)
 	signatureProvider := crypto.NewECDSASHA256Provider()
 	idGenerator := id.NewUUIDGenerator()
 	verifyClientSignatureUseCase := usecase.NewVerifyClientSignatureUseCase(signatureProvider)
@@ -56,11 +61,17 @@ func New(cfg config.Config) (*AppContainer, error) {
 	getServerSignedMessageUseCase := usecase.NewGetServerSignedMessageUseCase(messageRepository)
 	uploadDocumentUseCase := usecase.NewUploadDocumentUseCase(
 		documentRepository,
-		storage.NewLocalDocumentStorage(cfg.DocumentStorage.Path),
+		documentStorage,
 		idGenerator,
 		docx.NewProcessor(),
 		signatureProvider,
 		serverKeys.PrivateKey,
+	)
+	sendDocumentUseCase := usecase.NewSendDocumentUseCase(
+		documentRepository,
+		documentStorage,
+		encryption.NewDocumentEncryptor(documentStorage),
+		smtpMailer,
 	)
 
 	return &AppContainer{
@@ -68,12 +79,13 @@ func New(cfg config.Config) (*AppContainer, error) {
 		DB:                 db,
 		MessageRepository:  messageRepository,
 		DocumentRepository: documentRepository,
+		Mailer:             smtpMailer,
 		SignatureHandler: handler.NewSignatureHandler(
 			serverKeys,
 			verifyClientSignatureUseCase,
 			issueServerSignedMessageUseCase,
 			getServerSignedMessageUseCase,
 		),
-		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase),
+		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase, sendDocumentUseCase),
 	}, nil
 }

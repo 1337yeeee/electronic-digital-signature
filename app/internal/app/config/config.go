@@ -22,6 +22,7 @@ type Config struct {
 
 	ServerKeys      ServerKeysConfig
 	DocumentStorage DocumentStorageConfig
+	SMTP            SMTPConfig
 	Redis           RedisConfig
 }
 
@@ -32,6 +33,14 @@ type ServerKeysConfig struct {
 
 type DocumentStorageConfig struct {
 	Path string
+}
+
+type SMTPConfig struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	From     string
 }
 
 type RedisConfig struct {
@@ -64,6 +73,14 @@ func Load() (Config, error) {
 
 		DocumentStorage: DocumentStorageConfig{
 			Path: getEnv("DOCUMENT_STORAGE_PATH", "data/uploads"),
+		},
+
+		SMTP: SMTPConfig{
+			Host:     getEnv("SMTP_HOST", "localhost"),
+			Port:     getEnv("SMTP_PORT", "1025"),
+			User:     os.Getenv("SMTP_USER"),
+			Password: os.Getenv("SMTP_PASSWORD"),
+			From:     getEnv("SMTP_FROM", "server@example.com"),
 		},
 
 		Redis: RedisConfig{

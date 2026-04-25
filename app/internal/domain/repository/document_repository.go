@@ -37,3 +37,11 @@ func (r *DocumentRepository) FindByID(ctx context.Context, id string) (*model.Do
 
 	return &document, nil
 }
+
+func (r *DocumentRepository) Update(ctx context.Context, document *model.Document) error {
+	if r.db == nil {
+		return errors.New("document repository db is not configured")
+	}
+
+	return r.db.WithContext(ctx).Save(document).Error
+}

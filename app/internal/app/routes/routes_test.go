@@ -126,6 +126,101 @@ func TestUploadDocumentRouteRejectsNonDocxFile(t *testing.T) {
 	}
 }
 
+func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	documentRepository := &fakeDocumentRepository{
+		documents: []model.Document{
+			{
+				ID:               "document-id",
+				RecipientEmail:   "old-recipient@example.com",
+				OriginalFileName: "contract.docx",
+				EncryptedPath:    "stored/document-id_encrypted_package.json",
+			},
+		},
+	}
+	documentStorage := &fakeDocumentStorage{
+		encryptedPackageContent: []byte(`{"document_id":"document-id"}`),
+	}
+	mailer := &fakeMailer{}
+
+	router := SetupRouter(&container.AppContainer{
+		DocumentHandler: handler.NewDocumentHandler(
+			nil,
+			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, mailer),
+		),
+	})
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/documents/document-id/send", dto.SendDocumentRequest{
+		Email: "recipient@example.com",
+	})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var body dto.SendDocumentResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.DocumentID != "document-id" {
+		t.Fatalf("expected document_id, got %q", body.DocumentID)
+	}
+	if body.RecipientEmail != "recipient@example.com" {
+		t.Fatalf("expected recipient email, got %q", body.RecipientEmail)
+	}
+	if body.SendStatus != usecase.DocumentSendStatusSent {
+		t.Fatalf("expected send status sent, got %q", body.SendStatus)
+	}
+	if body.SentAt == "" {
+		t.Fatal("expected sent_at")
+	}
+
+	if len(mailer.attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(mailer.attachments))
+	}
+	if mailer.attachments[0].FileName != "document-id_encrypted_package.json" {
+		t.Fatalf("expected encrypted package attachment, got %q", mailer.attachments[0].FileName)
+	}
+	if string(mailer.attachments[0].Content) != `{"document_id":"document-id"}` {
+		t.Fatalf("unexpected attachment content %q", string(mailer.attachments[0].Content))
+	}
+	if !strings.Contains(mailer.body, "Document ID: document-id") {
+		t.Fatalf("expected document id in email body, got %q", mailer.body)
+	}
+	if !strings.Contains(mailer.body, "Encryption algorithm: AES-256-GCM") {
+		t.Fatalf("expected algorithm in email body, got %q", mailer.body)
+	}
+
+	savedDocument := documentRepository.documents[0]
+	if savedDocument.SendStatus != usecase.DocumentSendStatusSent {
+		t.Fatalf("expected saved status sent, got %q", savedDocument.SendStatus)
+	}
+	if savedDocument.LastSentToEmail != "recipient@example.com" {
+		t.Fatalf("expected saved sent email, got %q", savedDocument.LastSentToEmail)
+	}
+	if savedDocument.SentAt == nil {
+		t.Fatal("expected saved sent_at")
+	}
+}
+
+func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := SetupRouter(&container.AppContainer{
+		DocumentHandler: handler.NewDocumentHandler(
+			nil,
+			usecase.NewSendDocumentUseCase(&fakeDocumentRepository{}, &fakeDocumentStorage{}, nil, &fakeMailer{}),
+		),
+	})
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/documents/missing/send", dto.SendDocumentRequest{
+		Email: "recipient@example.com",
+	})
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, response.Code)
+	}
+}
+
 func TestServerPublicKeyRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	publicKey := []byte("-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n")
@@ -474,6 +569,7 @@ func setupRouterWithDocumentHandler(privateKey []byte) (*gin.Engine, *fakeDocume
 				signatureProvider,
 				privateKey,
 			),
+			nil,
 		),
 	})
 
@@ -684,8 +780,31 @@ func (r *fakeDocumentRepository) Create(_ context.Context, document *model.Docum
 	return nil
 }
 
+func (r *fakeDocumentRepository) FindByID(_ context.Context, id string) (*model.Document, error) {
+	for i := range r.documents {
+		if r.documents[i].ID == id {
+			return &r.documents[i], nil
+		}
+	}
+
+	return nil, gorm.ErrRecordNotFound
+}
+
+func (r *fakeDocumentRepository) Update(_ context.Context, document *model.Document) error {
+	for i := range r.documents {
+		if r.documents[i].ID == document.ID {
+			r.documents[i] = *document
+			return nil
+		}
+	}
+
+	r.documents = append(r.documents, *document)
+	return nil
+}
+
 type fakeDocumentStorage struct {
-	content []byte
+	content                 []byte
+	encryptedPackageContent []byte
 }
 
 func (s *fakeDocumentStorage) Save(_ context.Context, _ string, originalFileName string, content io.Reader) (string, error) {
@@ -696,6 +815,35 @@ func (s *fakeDocumentStorage) Save(_ context.Context, _ string, originalFileName
 
 	s.content = storedContent
 	return "stored/" + originalFileName, nil
+}
+
+func (s *fakeDocumentStorage) Read(_ context.Context, path string) ([]byte, error) {
+	if strings.HasSuffix(path, "_encrypted_package.json") {
+		return s.encryptedPackageContent, nil
+	}
+
+	return s.content, nil
+}
+
+func (s *fakeDocumentStorage) SaveEncryptedPackage(_ context.Context, documentID string, content []byte) (string, error) {
+	s.encryptedPackageContent = content
+	return "stored/" + documentID + "_encrypted_package.json", nil
+}
+
+type fakeMailer struct {
+	to          []string
+	subject     string
+	body        string
+	attachments []usecase.EmailAttachment
+	err         error
+}
+
+func (m *fakeMailer) SendEmail(_ context.Context, to []string, subject, body string, attachments []usecase.EmailAttachment) error {
+	m.to = to
+	m.subject = subject
+	m.body = body
+	m.attachments = attachments
+	return m.err
 }
 
 type fakeIDGenerator struct {

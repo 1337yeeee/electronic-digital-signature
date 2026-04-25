@@ -23,6 +23,7 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.GET("/server/messages/:id", handlerNotConfigured)
 		api.POST("/signatures/verify", handlerNotConfigured)
 		api.POST("/documents", handlerNotConfigured)
+		api.POST("/documents/:id/send", handlerNotConfigured)
 		return r
 	}
 
@@ -41,8 +42,10 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 
 	if appContainer.DocumentHandler == nil {
 		api.POST("/documents", handlerNotConfigured)
+		api.POST("/documents/:id/send", handlerNotConfigured)
 	} else {
 		api.POST("/documents", appContainer.DocumentHandler.UploadDocument)
+		api.POST("/documents/:id/send", appContainer.DocumentHandler.SendDocument)
 	}
 
 	return r

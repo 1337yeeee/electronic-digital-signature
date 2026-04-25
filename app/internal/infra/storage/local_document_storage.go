@@ -65,6 +65,22 @@ func (s *LocalDocumentStorage) SaveEncryptedPackage(ctx context.Context, documen
 	return path, nil
 }
 
+func (s *LocalDocumentStorage) Read(ctx context.Context, path string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return nil, fmt.Errorf("document path is required")
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read document file: %w", err)
+	}
+
+	return content, nil
+}
+
 func sanitizeFileName(name string) string {
 	name = filepath.Base(name)
 	name = strings.ReplaceAll(name, string(filepath.Separator), "_")

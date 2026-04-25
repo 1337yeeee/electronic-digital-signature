@@ -9,3 +9,14 @@ type UploadDocumentResponse struct {
 	MimeType         string `json:"mime_type"`
 	CreatedAt        string `json:"created_at"`
 }
+
+type SendDocumentRequest struct {
+	Email string `json:"email"`
+}
+
+type SendDocumentResponse struct {
+	DocumentID     string `json:"document_id"`
+	RecipientEmail string `json:"recipient_email"`
+	SendStatus     string `json:"send_status"`
+	SentAt         string `json:"sent_at,omitempty"`
+}

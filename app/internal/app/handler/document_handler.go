@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -10,18 +11,27 @@ import (
 	"electronic-digital-signature/internal/domain/model"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type uploadDocumentUseCase interface {
 	Execute(ctx context.Context, input usecase.UploadDocumentInput) (*model.Document, error)
 }
 
-type DocumentHandler struct {
-	uploadDocumentUseCase uploadDocumentUseCase
+type sendDocumentUseCase interface {
+	Execute(ctx context.Context, input usecase.SendDocumentInput) (*usecase.SendDocumentResult, error)
 }
 
-func NewDocumentHandler(uploadDocumentUseCase uploadDocumentUseCase) *DocumentHandler {
-	return &DocumentHandler{uploadDocumentUseCase: uploadDocumentUseCase}
+type DocumentHandler struct {
+	uploadDocumentUseCase uploadDocumentUseCase
+	sendDocumentUseCase   sendDocumentUseCase
+}
+
+func NewDocumentHandler(uploadDocumentUseCase uploadDocumentUseCase, sendDocumentUseCase sendDocumentUseCase) *DocumentHandler {
+	return &DocumentHandler{
+		uploadDocumentUseCase: uploadDocumentUseCase,
+		sendDocumentUseCase:   sendDocumentUseCase,
+	}
 }
 
 func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
@@ -69,4 +79,41 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 		MimeType:         document.MimeType,
 		CreatedAt:        document.CreatedAt.Format(time.RFC3339Nano),
 	})
+}
+
+func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
+	if h.sendDocumentUseCase == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "send document usecase is not configured"})
+		return
+	}
+
+	var request dto.SendDocumentRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	result, err := h.sendDocumentUseCase.Execute(ctx.Request.Context(), usecase.SendDocumentInput{
+		DocumentID:     ctx.Param("id"),
+		RecipientEmail: request.Email,
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := dto.SendDocumentResponse{
+		DocumentID:     result.DocumentID,
+		RecipientEmail: result.RecipientEmail,
+		SendStatus:     result.SendStatus,
+	}
+	if result.SentAt != nil {
+		response.SentAt = result.SentAt.Format(time.RFC3339Nano)
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }

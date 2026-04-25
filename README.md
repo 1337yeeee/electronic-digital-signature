@@ -45,7 +45,12 @@ export DB_USER=postgres
 export DB_PASSWORD=postgres
 export DB_NAME=eds_lab
 export SSL_MODE=disable
+export SMTP_HOST=localhost
+export SMTP_PORT=1025
+export SMTP_FROM=server@example.com
 ```
+
+Mailpit is available at http://localhost:8025 for local email inspection.
 
 ## Encrypted document package
 
