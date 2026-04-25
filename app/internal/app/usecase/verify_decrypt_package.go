@@ -3,7 +3,7 @@ package usecase
 import "context"
 
 type decryptPackageVerifier interface {
-	Verify(string, []byte, []byte) error
+	Verify(message []byte, signature []byte, publicKey []byte) error
 }
 
 func VerifyDecryptPackage(ctx context.Context, verifier decryptPackageVerifier, content, signature, publicKey []byte) error {
@@ -14,5 +14,5 @@ func VerifyDecryptPackage(ctx context.Context, verifier decryptPackageVerifier, 
 	default:
 	}
 
-	return verifier.Verify(string(content), signature, publicKey)
+	return verifier.Verify(content, signature, publicKey)
 }

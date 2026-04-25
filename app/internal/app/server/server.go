@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"electronic-digital-signature/internal/app/config"
 	"electronic-digital-signature/internal/app/container"
 	"electronic-digital-signature/internal/app/routes"
 	"errors"
