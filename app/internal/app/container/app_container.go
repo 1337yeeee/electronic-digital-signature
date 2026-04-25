@@ -9,15 +9,18 @@ import (
 	"electronic-digital-signature/internal/infra/database"
 	"electronic-digital-signature/internal/infra/id"
 	"electronic-digital-signature/internal/infra/keys"
+	"electronic-digital-signature/internal/infra/storage"
 
 	"gorm.io/gorm"
 )
 
 type AppContainer struct {
-	ServerKeys        keys.ServerKeyPair
-	DB                *gorm.DB
-	MessageRepository *repository.MessageRepository
-	SignatureHandler  *handler.SignatureHandler
+	ServerKeys         keys.ServerKeyPair
+	DB                 *gorm.DB
+	MessageRepository  *repository.MessageRepository
+	DocumentRepository *repository.DocumentRepository
+	SignatureHandler   *handler.SignatureHandler
+	DocumentHandler    *handler.DocumentHandler
 }
 
 func New(cfg config.Config) (*AppContainer, error) {
@@ -38,26 +41,35 @@ func New(cfg config.Config) (*AppContainer, error) {
 	}
 
 	messageRepository := repository.NewMessageRepository(db)
+	documentRepository := repository.NewDocumentRepository(db)
 	signatureProvider := crypto.NewECDSASHA256Provider()
+	idGenerator := id.NewUUIDGenerator()
 	verifyClientSignatureUseCase := usecase.NewVerifyClientSignatureUseCase(signatureProvider)
 	issueServerSignedMessageUseCase := usecase.NewIssueServerSignedMessageUseCase(
 		serverKeys.PrivateKey,
 		signatureProvider,
 		messageRepository,
-		id.NewUUIDGenerator(),
+		idGenerator,
 		"server",
 	)
 	getServerSignedMessageUseCase := usecase.NewGetServerSignedMessageUseCase(messageRepository)
+	uploadDocumentUseCase := usecase.NewUploadDocumentUseCase(
+		documentRepository,
+		storage.NewLocalDocumentStorage(cfg.DocumentStorage.Path),
+		idGenerator,
+	)
 
 	return &AppContainer{
-		ServerKeys:        serverKeys,
-		DB:                db,
-		MessageRepository: messageRepository,
+		ServerKeys:         serverKeys,
+		DB:                 db,
+		MessageRepository:  messageRepository,
+		DocumentRepository: documentRepository,
 		SignatureHandler: handler.NewSignatureHandler(
 			serverKeys,
 			verifyClientSignatureUseCase,
 			issueServerSignedMessageUseCase,
 			getServerSignedMessageUseCase,
 		),
+		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase),
 	}, nil
 }

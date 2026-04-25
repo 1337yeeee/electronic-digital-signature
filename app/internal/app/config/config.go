@@ -20,13 +20,18 @@ type Config struct {
 
 	JWTSecret string
 
-	ServerKeys ServerKeysConfig
-	Redis      RedisConfig
+	ServerKeys      ServerKeysConfig
+	DocumentStorage DocumentStorageConfig
+	Redis           RedisConfig
 }
 
 type ServerKeysConfig struct {
 	PrivateKeyPath string
 	PublicKeyPath  string
+}
+
+type DocumentStorageConfig struct {
+	Path string
 }
 
 type RedisConfig struct {
@@ -55,6 +60,10 @@ func Load() (Config, error) {
 		ServerKeys: ServerKeysConfig{
 			PrivateKeyPath: os.Getenv("SERVER_PRIVATE_KEY_PATH"),
 			PublicKeyPath:  os.Getenv("SERVER_PUBLIC_KEY_PATH"),
+		},
+
+		DocumentStorage: DocumentStorageConfig{
+			Path: getEnv("DOCUMENT_STORAGE_PATH", "data/uploads"),
 		},
 
 		Redis: RedisConfig{

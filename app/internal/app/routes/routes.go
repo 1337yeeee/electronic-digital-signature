@@ -17,19 +17,33 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	})
 
 	api := r.Group("/api/v1")
-	if appContainer == nil || appContainer.SignatureHandler == nil {
+	if appContainer == nil {
 		api.GET("/server/public-key", handlerNotConfigured)
 		api.POST("/server/messages", handlerNotConfigured)
 		api.GET("/server/messages/:id", handlerNotConfigured)
 		api.POST("/signatures/verify", handlerNotConfigured)
+		api.POST("/documents", handlerNotConfigured)
 		return r
 	}
 
-	signatureHandler := appContainer.SignatureHandler
-	api.GET("/server/public-key", signatureHandler.GetServerPublicKey)
-	api.POST("/server/messages", signatureHandler.IssueServerMessage)
-	api.GET("/server/messages/:id", signatureHandler.GetServerMessage)
-	api.POST("/signatures/verify", signatureHandler.VerifyClientSignature)
+	if appContainer.SignatureHandler == nil {
+		api.GET("/server/public-key", handlerNotConfigured)
+		api.POST("/server/messages", handlerNotConfigured)
+		api.GET("/server/messages/:id", handlerNotConfigured)
+		api.POST("/signatures/verify", handlerNotConfigured)
+	} else {
+		signatureHandler := appContainer.SignatureHandler
+		api.GET("/server/public-key", signatureHandler.GetServerPublicKey)
+		api.POST("/server/messages", signatureHandler.IssueServerMessage)
+		api.GET("/server/messages/:id", signatureHandler.GetServerMessage)
+		api.POST("/signatures/verify", signatureHandler.VerifyClientSignature)
+	}
+
+	if appContainer.DocumentHandler == nil {
+		api.POST("/documents", handlerNotConfigured)
+	} else {
+		api.POST("/documents", appContainer.DocumentHandler.UploadDocument)
+	}
 
 	return r
 }

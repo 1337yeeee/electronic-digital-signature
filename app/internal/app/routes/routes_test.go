@@ -9,8 +9,11 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +45,63 @@ func TestHealthRoute(t *testing.T) {
 	expectedBody := `{"status":"ok"}`
 	if response.Body.String() != expectedBody {
 		t.Fatalf("expected body %s, got %s", expectedBody, response.Body.String())
+	}
+}
+
+func TestUploadDocumentRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router, documentRepository, documentStorage := setupRouterWithDocumentHandler()
+
+	response := performMultipartDocumentUpload(t, router, "contract.docx")
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d", http.StatusCreated, response.Code)
+	}
+
+	var body dto.UploadDocumentResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+
+	if body.DocumentID != "00000000-0000-4000-8000-000000000001" {
+		t.Fatalf("expected document_id from generator, got %q", body.DocumentID)
+	}
+	if body.OwnerEmail != "owner@example.com" {
+		t.Fatalf("expected owner email, got %q", body.OwnerEmail)
+	}
+	if body.RecipientEmail != "recipient@example.com" {
+		t.Fatalf("expected recipient email, got %q", body.RecipientEmail)
+	}
+	if body.OriginalFileName != "contract.docx" {
+		t.Fatalf("expected original file name, got %q", body.OriginalFileName)
+	}
+	if body.StoredPath != "stored/contract.docx" {
+		t.Fatalf("expected stored path, got %q", body.StoredPath)
+	}
+	if len(documentRepository.documents) != 1 {
+		t.Fatalf("expected 1 saved document, got %d", len(documentRepository.documents))
+	}
+	if documentStorage.content != "docx content" {
+		t.Fatalf("expected stored content, got %q", documentStorage.content)
+	}
+}
+
+func TestUploadDocumentRouteRejectsNonDocxFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router, _, _ := setupRouterWithDocumentHandler()
+
+	response := performMultipartDocumentUpload(t, router, "contract.txt")
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body["error"] != "document file must have .docx extension" {
+		t.Fatalf("unexpected error: %q", body["error"])
 	}
 }
 
@@ -378,6 +438,23 @@ func setupRouterWithSignatureHandlerAndRepository(serverKeys keys.ServerKeyPair)
 	return router, messageRepository
 }
 
+func setupRouterWithDocumentHandler() (*gin.Engine, *fakeDocumentRepository, *fakeDocumentStorage) {
+	documentRepository := &fakeDocumentRepository{}
+	documentStorage := &fakeDocumentStorage{}
+
+	router := SetupRouter(&container.AppContainer{
+		DocumentHandler: handler.NewDocumentHandler(
+			usecase.NewUploadDocumentUseCase(
+				documentRepository,
+				documentStorage,
+				fakeIDGenerator{id: "00000000-0000-4000-8000-000000000001"},
+			),
+		),
+	})
+
+	return router, documentRepository, documentStorage
+}
+
 func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -388,6 +465,39 @@ func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, b
 
 	request := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	return response
+}
+
+func performMultipartDocumentUpload(t *testing.T, router *gin.Engine, fileName string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+
+	if err := writer.WriteField("owner_email", "owner@example.com"); err != nil {
+		t.Fatalf("write owner_email field: %v", err)
+	}
+	if err := writer.WriteField("recipient_email", "recipient@example.com"); err != nil {
+		t.Fatalf("write recipient_email field: %v", err)
+	}
+
+	fileWriter, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := io.Copy(fileWriter, strings.NewReader("docx content")); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/documents", &requestBody)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -473,6 +583,29 @@ func (r *fakeMessageRepository) FindByID(_ context.Context, id string) (*model.M
 	}
 
 	return nil, gorm.ErrRecordNotFound
+}
+
+type fakeDocumentRepository struct {
+	documents []model.Document
+}
+
+func (r *fakeDocumentRepository) Create(_ context.Context, document *model.Document) error {
+	r.documents = append(r.documents, *document)
+	return nil
+}
+
+type fakeDocumentStorage struct {
+	content string
+}
+
+func (s *fakeDocumentStorage) Save(_ context.Context, _ string, originalFileName string, content io.Reader) (string, error) {
+	storedContent, err := io.ReadAll(content)
+	if err != nil {
+		return "", err
+	}
+
+	s.content = string(storedContent)
+	return "stored/" + originalFileName, nil
 }
 
 type fakeIDGenerator struct {
