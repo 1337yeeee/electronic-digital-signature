@@ -9,7 +9,6 @@ import (
 )
 
 func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
-	//TODO routes
 	r := gin.Default()
 
 	r.GET("/health", func(ctx *gin.Context) {

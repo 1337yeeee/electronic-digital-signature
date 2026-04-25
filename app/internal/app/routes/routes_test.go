@@ -146,7 +146,7 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 	router := SetupRouter(&container.AppContainer{
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
-			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, mailer),
+			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, nil, nil, mailer),
 		),
 	})
 
@@ -164,6 +164,9 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 	}
 	if body.DocumentID != "document-id" {
 		t.Fatalf("expected document_id, got %q", body.DocumentID)
+	}
+	if body.PackageID != "document-id_encrypted_package" {
+		t.Fatalf("expected package_id, got %q", body.PackageID)
 	}
 	if body.RecipientEmail != "recipient@example.com" {
 		t.Fatalf("expected recipient email, got %q", body.RecipientEmail)
@@ -208,7 +211,7 @@ func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 	router := SetupRouter(&container.AppContainer{
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
-			usecase.NewSendDocumentUseCase(&fakeDocumentRepository{}, &fakeDocumentStorage{}, nil, &fakeMailer{}),
+			usecase.NewSendDocumentUseCase(&fakeDocumentRepository{}, &fakeDocumentStorage{}, nil, nil, nil, &fakeMailer{}),
 		),
 	})
 

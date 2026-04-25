@@ -16,6 +16,7 @@ type SendDocumentRequest struct {
 
 type SendDocumentResponse struct {
 	DocumentID     string `json:"document_id"`
+	PackageID      string `json:"package_id,omitempty"`
 	RecipientEmail string `json:"recipient_email"`
 	SendStatus     string `json:"send_status"`
 	SentAt         string `json:"sent_at,omitempty"`

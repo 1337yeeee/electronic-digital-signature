@@ -20,7 +20,6 @@ type Server struct {
 }
 
 func New(cfg config.Config, container *container.AppContainer) *Server {
-	//TODO config
 	router := routes.SetupRouter(container)
 
 	return &Server{

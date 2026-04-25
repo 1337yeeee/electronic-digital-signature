@@ -108,6 +108,7 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 
 	response := dto.SendDocumentResponse{
 		DocumentID:     result.DocumentID,
+		PackageID:      result.PackageID,
 		RecipientEmail: result.RecipientEmail,
 		SendStatus:     result.SendStatus,
 	}

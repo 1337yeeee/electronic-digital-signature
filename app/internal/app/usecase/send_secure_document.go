@@ -22,7 +22,7 @@ type EmailAttachment struct {
 	Content     []byte
 }
 
-type mailer interface {
+type Mailer interface {
 	SendEmail(ctx context.Context, to []string, subject, body string, attachments []EmailAttachment) error
 }
 
@@ -35,7 +35,12 @@ type secureDocumentStorage interface {
 	Read(ctx context.Context, path string) ([]byte, error)
 }
 
-type documentEncryptor interface {
+type DocumentSigner interface {
+	Hash(message []byte) []byte
+	Sign(message []byte, privateKey []byte) ([]byte, error)
+}
+
+type DocumentEncryptor interface {
 	EncryptAndSave(ctx context.Context, document model.Document, content []byte) (encryption.EncryptedPackage, string, error)
 }
 
@@ -54,6 +59,7 @@ type SendDocumentInput struct {
 
 type SendDocumentResult struct {
 	DocumentID     string
+	PackageID      string
 	RecipientEmail string
 	SendStatus     string
 	SentAt         *time.Time
@@ -62,19 +68,25 @@ type SendDocumentResult struct {
 type SendDocumentUseCase struct {
 	repository sendDocumentRepository
 	storage    secureDocumentStorage
-	encryptor  documentEncryptor
-	mailer     mailer
+	signer     DocumentSigner
+	privateKey []byte
+	encryptor  DocumentEncryptor
+	mailer     Mailer
 }
 
 func NewSendDocumentUseCase(
 	repository sendDocumentRepository,
 	storage secureDocumentStorage,
-	encryptor documentEncryptor,
-	mailer mailer,
+	signer DocumentSigner,
+	privateKey []byte,
+	encryptor DocumentEncryptor,
+	mailer Mailer,
 ) *SendDocumentUseCase {
 	return &SendDocumentUseCase{
 		repository: repository,
 		storage:    storage,
+		signer:     signer,
+		privateKey: privateKey,
 		encryptor:  encryptor,
 		mailer:     mailer,
 	}
@@ -102,7 +114,7 @@ func (uc *SendDocumentUseCase) Execute(ctx context.Context, input SendDocumentIn
 		return nil, err
 	}
 
-	encryptedPackage, attachmentName, err := uc.loadOrCreateEncryptedPackage(ctx, document)
+	encryptedPackage, attachmentName, packageID, err := uc.loadOrCreateEncryptedPackage(ctx, document)
 	if err != nil {
 		return nil, err
 	}
@@ -138,46 +150,65 @@ func (uc *SendDocumentUseCase) Execute(ctx context.Context, input SendDocumentIn
 
 	return &SendDocumentResult{
 		DocumentID:     document.ID,
+		PackageID:      packageID,
 		RecipientEmail: input.RecipientEmail,
 		SendStatus:     document.SendStatus,
 		SentAt:         document.SentAt,
 	}, nil
 }
 
-func (uc *SendDocumentUseCase) loadOrCreateEncryptedPackage(ctx context.Context, document *model.Document) ([]byte, string, error) {
+func (uc *SendDocumentUseCase) loadOrCreateEncryptedPackage(ctx context.Context, document *model.Document) ([]byte, string, string, error) {
 	if document.EncryptedPath != "" {
 		content, err := uc.storage.Read(ctx, document.EncryptedPath)
 		if err != nil {
-			return nil, "", fmt.Errorf("read encrypted package: %w", err)
+			return nil, "", "", fmt.Errorf("read encrypted package: %w", err)
 		}
 
-		return content, filepath.Base(document.EncryptedPath), nil
+		attachmentName := filepath.Base(document.EncryptedPath)
+		return content, attachmentName, packageIDFromAttachmentName(attachmentName), nil
+	}
+
+	if uc.signer == nil {
+		return nil, "", "", fmt.Errorf("document signer is not configured")
+	}
+	if len(uc.privateKey) == 0 {
+		return nil, "", "", fmt.Errorf("server private key is not configured")
 	}
 
 	if uc.encryptor == nil {
-		return nil, "", fmt.Errorf("document encryptor is not configured")
+		return nil, "", "", fmt.Errorf("document encryptor is not configured")
 	}
 
 	content, err := uc.storage.Read(ctx, document.StoredPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("read stored document: %w", err)
+		return nil, "", "", fmt.Errorf("read stored document: %w", err)
 	}
+
+	document.Hash = uc.signer.Hash(content)
+	signature, err := uc.signer.Sign(content, uc.privateKey)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("sign document package content: %w", err)
+	}
+	now := time.Now().UTC()
+	document.Signature = signature
+	document.SignedAt = now
 
 	_, encryptedPath, err := uc.encryptor.EncryptAndSave(ctx, *document, content)
 	if err != nil {
-		return nil, "", fmt.Errorf("create encrypted package: %w", err)
+		return nil, "", "", fmt.Errorf("create encrypted package: %w", err)
 	}
 	document.EncryptedPath = encryptedPath
 
 	encryptedPackage, err := uc.storage.Read(ctx, encryptedPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("read encrypted package: %w", err)
+		return nil, "", "", fmt.Errorf("read encrypted package: %w", err)
 	}
 
-	return encryptedPackage, filepath.Base(encryptedPath), nil
+	attachmentName := filepath.Base(encryptedPath)
+	return encryptedPackage, attachmentName, packageIDFromAttachmentName(attachmentName), nil
 }
 
-func SendSecureDocument(ctx context.Context, mailer mailer, input SendSecureDocumentInput) error {
+func SendSecureDocument(ctx context.Context, mailer Mailer, input SendSecureDocumentInput) error {
 	if len(input.EncryptedPackage) == 0 {
 		return fmt.Errorf("encrypted package is required")
 	}
@@ -204,4 +235,8 @@ func SendSecureDocument(ctx context.Context, mailer mailer, input SendSecureDocu
 			Content:     input.EncryptedPackage,
 		},
 	})
+}
+
+func packageIDFromAttachmentName(attachmentName string) string {
+	return strings.TrimSuffix(attachmentName, filepath.Ext(attachmentName))
 }

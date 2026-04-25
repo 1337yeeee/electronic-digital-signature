@@ -8,7 +8,6 @@ import (
 )
 
 type Config struct {
-	//TODO Config
 	APIPort string
 
 	DBHost     string

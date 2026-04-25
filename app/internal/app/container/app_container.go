@@ -70,6 +70,8 @@ func New(cfg config.Config) (*AppContainer, error) {
 	sendDocumentUseCase := usecase.NewSendDocumentUseCase(
 		documentRepository,
 		documentStorage,
+		signatureProvider,
+		serverKeys.PrivateKey,
 		encryption.NewDocumentEncryptor(documentStorage),
 		smtpMailer,
 	)

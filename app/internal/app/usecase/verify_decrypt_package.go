@@ -7,7 +7,6 @@ type decryptPackageVerifier interface {
 }
 
 func VerifyDecryptPackage(ctx context.Context, verifier decryptPackageVerifier, content, signature, publicKey []byte) error {
-	//TODO VerifyDecryptPackage
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
