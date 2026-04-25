@@ -11,6 +11,6 @@ type mailer interface {
 
 func SendSecureDocument(ctx context.Context, document model.Document, mailer mailer, to []string, subject string, privateKey, publicKer []byte) error {
 	//TODO SendSecureDocument
-	content := document.Message.Message + string(privateKey) + string(publicKer)
+	content := document.OriginalFileName + string(privateKey) + string(publicKer)
 	return mailer.SendEmail(ctx, to, subject, content)
 }
