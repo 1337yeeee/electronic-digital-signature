@@ -1,6 +1,12 @@
 package routes
 
 import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +14,7 @@ import (
 
 	"electronic-digital-signature/internal/app/container"
 	"electronic-digital-signature/internal/app/dto"
+	"electronic-digital-signature/internal/app/handler"
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/keys"
 
@@ -36,9 +43,7 @@ func TestHealthRoute(t *testing.T) {
 func TestServerPublicKeyRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	publicKey := []byte("-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n")
-	router := SetupRouter(&container.AppContainer{
-		ServerKeys: keys.ServerKeyPair{PublicKey: publicKey},
-	})
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{PublicKey: publicKey})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/server/public-key", nil)
 	response := httptest.NewRecorder()
@@ -64,7 +69,7 @@ func TestServerPublicKeyRoute(t *testing.T) {
 
 func TestServerPublicKeyRouteReturnsErrorWhenKeyIsMissing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	router := SetupRouter(&container.AppContainer{})
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/server/public-key", nil)
 	response := httptest.NewRecorder()
@@ -82,4 +87,146 @@ func TestServerPublicKeyRouteReturnsErrorWhenKeyIsMissing(t *testing.T) {
 	if body["error"] != "server public key is not loaded" {
 		t.Fatalf("unexpected error: %q", body["error"])
 	}
+}
+
+func TestVerifyClientSignatureRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	provider := crypto.NewECDSASHA256Provider()
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	message := "client signed message"
+
+	signature, err := provider.Sign([]byte(message), privateKey)
+	if err != nil {
+		t.Fatalf("sign message: %v", err)
+	}
+
+	requestBody := dto.VerifyClientSignatureRequest{
+		Message:         message,
+		SignatureBase64: base64.StdEncoding.EncodeToString(signature),
+		PublicKey:       string(publicKey),
+	}
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/signatures/verify", requestBody)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !body.Valid {
+		t.Fatalf("expected valid signature, got error %q", body.Error)
+	}
+}
+
+func TestVerifyClientSignatureRouteReturnsInvalidForModifiedMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	provider := crypto.NewECDSASHA256Provider()
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+
+	signature, err := provider.Sign([]byte("original message"), privateKey)
+	if err != nil {
+		t.Fatalf("sign message: %v", err)
+	}
+
+	requestBody := dto.VerifyClientSignatureRequest{
+		Message:         "modified message",
+		SignatureBase64: base64.StdEncoding.EncodeToString(signature),
+		PublicKey:       string(publicKey),
+	}
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/signatures/verify", requestBody)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Valid {
+		t.Fatal("expected modified message signature to be invalid")
+	}
+	if body.Error == "" {
+		t.Fatal("expected verification error")
+	}
+}
+
+func TestVerifyClientSignatureRouteRejectsInvalidBase64(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	requestBody := dto.VerifyClientSignatureRequest{
+		Message:         "message",
+		SignatureBase64: "not-base64",
+		PublicKey:       "public key",
+	}
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/signatures/verify", requestBody)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Valid {
+		t.Fatal("expected invalid base64 response to be invalid")
+	}
+	if body.Error != "signature_base64 must be valid base64" {
+		t.Fatalf("unexpected error: %q", body.Error)
+	}
+}
+
+func setupRouterWithSignatureHandler(serverKeys keys.ServerKeyPair) *gin.Engine {
+	return SetupRouter(&container.AppContainer{
+		SignatureHandler: handler.NewSignatureHandler(serverKeys, crypto.NewECDSASHA256Provider()),
+	})
+}
+
+func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
+
+	request := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	return response
+}
+
+func generateECDSAKeyPairPEM(t *testing.T) ([]byte, []byte) {
+	t.Helper()
+
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate private key: %v", err)
+	}
+
+	privateKeyDER, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		t.Fatalf("marshal private key: %v", err)
+	}
+
+	publicKeyDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+
+	return pemBlock("EC PRIVATE KEY", privateKeyDER), pemBlock("PUBLIC KEY", publicKeyDER)
+}
+
+func pemBlock(blockType string, bytes []byte) []byte {
+	return []byte("-----BEGIN " + blockType + "-----\n" +
+		base64.StdEncoding.EncodeToString(bytes) +
+		"\n-----END " + blockType + "-----\n")
 }

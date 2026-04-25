@@ -3,7 +3,7 @@ package dto
 type VerifyClientSignatureRequest struct {
 	Message         string `json:"message" binding:"required"`
 	SignatureBase64 string `json:"signature_base64" binding:"required"`
-	PublicKeyBase64 string `json:"public_key_base64" binding:"required"`
+	PublicKey       string `json:"public_key" binding:"required"`
 }
 
 type VerifyClientSignatureResponse struct {

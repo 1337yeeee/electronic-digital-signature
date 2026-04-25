@@ -4,8 +4,6 @@ import (
 	"net/http"
 
 	"electronic-digital-signature/internal/app/container"
-	"electronic-digital-signature/internal/app/dto"
-	"electronic-digital-signature/internal/infra/crypto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,19 +17,21 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	})
 
 	api := r.Group("/api/v1")
-	api.GET("/server/public-key", func(ctx *gin.Context) {
-		if appContainer == nil || len(appContainer.ServerKeys.PublicKey) == 0 {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": "server public key is not loaded",
-			})
-			return
-		}
+	if appContainer == nil || appContainer.SignatureHandler == nil {
+		api.GET("/server/public-key", handlerNotConfigured)
+		api.POST("/signatures/verify", handlerNotConfigured)
+		return r
+	}
 
-		ctx.JSON(http.StatusOK, dto.ServerPublicKeyResponse{
-			Algorithm:    crypto.ECDSASHA256Algorithm,
-			PublicKeyPEM: string(appContainer.ServerKeys.PublicKey),
-		})
-	})
+	signatureHandler := appContainer.SignatureHandler
+	api.GET("/server/public-key", signatureHandler.GetServerPublicKey)
+	api.POST("/signatures/verify", signatureHandler.VerifyClientSignature)
 
 	return r
+}
+
+func handlerNotConfigured(ctx *gin.Context) {
+	ctx.JSON(http.StatusInternalServerError, gin.H{
+		"error": "signature handler is not configured",
+	})
 }
