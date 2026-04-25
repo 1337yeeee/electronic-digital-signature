@@ -3,6 +3,7 @@ package container
 import (
 	"electronic-digital-signature/internal/app/config"
 	"electronic-digital-signature/internal/app/handler"
+	"electronic-digital-signature/internal/app/usecase"
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/keys"
 )
@@ -22,9 +23,18 @@ func New(cfg config.Config) (*AppContainer, error) {
 	}
 
 	signatureProvider := crypto.NewECDSASHA256Provider()
+	verifyClientSignatureUseCase := usecase.NewVerifyClientSignatureUseCase(signatureProvider)
+	issueServerSignedMessageUseCase := usecase.NewIssueServerSignedMessageUseCase(
+		serverKeys.PrivateKey,
+		signatureProvider,
+	)
 
 	return &AppContainer{
-		ServerKeys:       serverKeys,
-		SignatureHandler: handler.NewSignatureHandler(serverKeys, signatureProvider),
+		ServerKeys: serverKeys,
+		SignatureHandler: handler.NewSignatureHandler(
+			serverKeys,
+			verifyClientSignatureUseCase,
+			issueServerSignedMessageUseCase,
+		),
 	}, nil
 }

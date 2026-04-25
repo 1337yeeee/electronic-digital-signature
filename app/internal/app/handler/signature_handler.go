@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"electronic-digital-signature/internal/app/dto"
-	"electronic-digital-signature/internal/app/usecase"
 	"electronic-digital-signature/internal/domain/model"
 	signaturecrypto "electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/keys"
@@ -18,21 +17,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type signatureProvider interface {
-	Verify(message []byte, signature []byte, publicKey []byte) error
-	Hash(message []byte) []byte
-	Sign(message []byte, privateKey []byte) ([]byte, error)
+type verifyClientSignatureUseCase interface {
+	Execute(message model.Message, signature []byte, publicKey []byte) error
+}
+
+type issueServerSignedMessageUseCase interface {
+	Execute(message *model.Message) (signature []byte, messageHash []byte, err error)
 }
 
 type SignatureHandler struct {
-	serverKeys keys.ServerKeyPair
-	provider   signatureProvider
+	serverKeys                      keys.ServerKeyPair
+	verifyClientSignatureUseCase    verifyClientSignatureUseCase
+	issueServerSignedMessageUseCase issueServerSignedMessageUseCase
 }
 
-func NewSignatureHandler(serverKeys keys.ServerKeyPair, provider signatureProvider) *SignatureHandler {
+func NewSignatureHandler(
+	serverKeys keys.ServerKeyPair,
+	verifyClientSignatureUseCase verifyClientSignatureUseCase,
+	issueServerSignedMessageUseCase issueServerSignedMessageUseCase,
+) *SignatureHandler {
 	return &SignatureHandler{
-		serverKeys: serverKeys,
-		provider:   provider,
+		serverKeys:                      serverKeys,
+		verifyClientSignatureUseCase:    verifyClientSignatureUseCase,
+		issueServerSignedMessageUseCase: issueServerSignedMessageUseCase,
 	}
 }
 
@@ -51,7 +58,7 @@ func (h *SignatureHandler) GetServerPublicKey(ctx *gin.Context) {
 }
 
 func (h *SignatureHandler) VerifyClientSignature(ctx *gin.Context) {
-	if h.provider == nil {
+	if h.verifyClientSignatureUseCase == nil {
 		ctx.JSON(http.StatusInternalServerError, dto.VerifyClientSignatureResponse{
 			Valid: false,
 			Error: "signature verifier is not configured",
@@ -78,7 +85,7 @@ func (h *SignatureHandler) VerifyClientSignature(ctx *gin.Context) {
 	}
 
 	message := model.Message{Message: request.Message}
-	if err := usecase.VerifyClientSignature(message, signature, []byte(request.PublicKey), h.provider); err != nil {
+	if err := h.verifyClientSignatureUseCase.Execute(message, signature, []byte(request.PublicKey)); err != nil {
 		ctx.JSON(http.StatusOK, dto.VerifyClientSignatureResponse{
 			Valid: false,
 			Error: err.Error(),
@@ -92,9 +99,9 @@ func (h *SignatureHandler) VerifyClientSignature(ctx *gin.Context) {
 }
 
 func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
-	if h.provider == nil {
+	if h.issueServerSignedMessageUseCase == nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "signature provider is not configured",
+			"error": "issue server signed message usecase is not configured",
 		})
 		return
 	}
@@ -123,7 +130,7 @@ func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
 		CreatedAt: now,
 	}
 
-	signature, messageHash, err := usecase.IssueServerSignedMessage(&message, h.serverKeys.PrivateKey, h.provider)
+	signature, messageHash, err := h.issueServerSignedMessageUseCase.Execute(&message)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

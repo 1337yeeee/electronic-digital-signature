@@ -16,6 +16,7 @@ import (
 	"electronic-digital-signature/internal/app/container"
 	"electronic-digital-signature/internal/app/dto"
 	"electronic-digital-signature/internal/app/handler"
+	"electronic-digital-signature/internal/app/usecase"
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/keys"
 
@@ -283,8 +284,14 @@ func TestIssueServerMessageRouteReturnsErrorWhenPrivateKeyIsMissing(t *testing.T
 }
 
 func setupRouterWithSignatureHandler(serverKeys keys.ServerKeyPair) *gin.Engine {
+	signatureProvider := crypto.NewECDSASHA256Provider()
+
 	return SetupRouter(&container.AppContainer{
-		SignatureHandler: handler.NewSignatureHandler(serverKeys, crypto.NewECDSASHA256Provider()),
+		SignatureHandler: handler.NewSignatureHandler(
+			serverKeys,
+			usecase.NewVerifyClientSignatureUseCase(signatureProvider),
+			usecase.NewIssueServerSignedMessageUseCase(serverKeys.PrivateKey, signatureProvider),
+		),
 	})
 }
 

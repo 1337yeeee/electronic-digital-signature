@@ -7,14 +7,21 @@ type serverMessageSigner interface {
 	Sign(message []byte, privateKey []byte) ([]byte, error)
 }
 
-func IssueServerSignedMessage(
-	//TODO IssueServerSignedMessage
-	message *model.Message,
-	privateKey []byte,
-	provider serverMessageSigner,
-) (signature []byte, messageHash []byte, err error) {
+type IssueServerSignedMessageUseCase struct {
+	privateKey []byte
+	signer     serverMessageSigner
+}
+
+func NewIssueServerSignedMessageUseCase(privateKey []byte, signer serverMessageSigner) *IssueServerSignedMessageUseCase {
+	return &IssueServerSignedMessageUseCase{
+		privateKey: privateKey,
+		signer:     signer,
+	}
+}
+
+func (uc *IssueServerSignedMessageUseCase) Execute(message *model.Message) (signature []byte, messageHash []byte, err error) {
 	byteMessage := []byte(message.Message)
-	messageHash = provider.Hash(byteMessage)
-	signature, err = provider.Sign(byteMessage, privateKey)
+	messageHash = uc.signer.Hash(byteMessage)
+	signature, err = uc.signer.Sign(byteMessage, uc.privateKey)
 	return
 }
