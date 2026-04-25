@@ -50,19 +50,20 @@ func NewDocumentHandler(
 
 func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 	if h.uploadDocumentUseCase == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "upload document usecase is not configured"})
+		respondError(ctx, http.StatusInternalServerError, "internal_error", "Document upload is not available right now.")
 		return
 	}
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "document file is required"})
+		respondError(ctx, http.StatusBadRequest, "document_file_required", "Document file is required.")
 		return
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "open uploaded document file"})
+		logRequestError(ctx, "upload-document-open-file", err)
+		respondError(ctx, http.StatusBadRequest, "document_file_unreadable", "Uploaded document file could not be opened.")
 		return
 	}
 	defer file.Close()
@@ -80,11 +81,20 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 		Content:          file,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		logRequestError(ctx, "upload-document", err)
+		if strings.Contains(err.Error(), ".docx extension") {
+			respondError(ctx, http.StatusBadRequest, "invalid_document_type", "Document file must have .docx extension.")
+			return
+		}
+		if strings.Contains(err.Error(), "document file is required") {
+			respondError(ctx, http.StatusBadRequest, "document_file_required", "Document file is required.")
+			return
+		}
+		respondError(ctx, http.StatusBadRequest, "document_upload_failed", "Document could not be uploaded.")
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, dto.UploadDocumentResponse{
+	respondSuccess(ctx, http.StatusCreated, dto.UploadDocumentResponse{
 		DocumentID:       document.ID,
 		OwnerEmail:       document.OwnerEmail,
 		RecipientEmail:   document.RecipientEmail,
@@ -97,13 +107,13 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 
 func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 	if h.sendDocumentUseCase == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "send document usecase is not configured"})
+		respondError(ctx, http.StatusInternalServerError, "internal_error", "Document sending is not available right now.")
 		return
 	}
 
 	var request dto.SendDocumentRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		respondError(ctx, http.StatusBadRequest, "invalid_request", "Request body is invalid.")
 		return
 	}
 
@@ -112,11 +122,16 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 		RecipientEmail: request.Email,
 	})
 	if err != nil {
+		logRequestError(ctx, "send-document", err)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+			respondError(ctx, http.StatusNotFound, "document_not_found", "Document was not found.")
 			return
 		}
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		if strings.Contains(err.Error(), "recipient email is required") {
+			respondError(ctx, http.StatusBadRequest, "recipient_email_required", "Recipient email is required.")
+			return
+		}
+		respondError(ctx, http.StatusBadRequest, "document_send_failed", "Document package could not be sent.")
 		return
 	}
 
@@ -130,18 +145,18 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 		response.SentAt = result.SentAt.Format(time.RFC3339Nano)
 	}
 
-	ctx.JSON(http.StatusOK, response)
+	respondSuccess(ctx, http.StatusOK, response)
 }
 
 func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {
 	if h.verifyDecryptPackageUseCase == nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "verify decrypt package usecase is not configured"})
+		respondError(ctx, http.StatusInternalServerError, "internal_error", "Package verification is not available right now.")
 		return
 	}
 
 	packageContent, err := readPackageContent(ctx)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondError(ctx, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
@@ -149,7 +164,15 @@ func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {
 		PackageContent: packageContent,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		logRequestError(ctx, "verify-decrypt-package", err)
+		switch {
+		case errors.Is(err, usecase.ErrInvalidSignature):
+			respondError(ctx, http.StatusBadRequest, "invalid_signature", "Package signature is invalid.")
+		case errors.Is(err, usecase.ErrInvalidEncryptedPackage):
+			respondError(ctx, http.StatusBadRequest, "invalid_package", "Encrypted package is invalid.")
+		default:
+			respondError(ctx, http.StatusBadRequest, "verify_decrypt_failed", "Package could not be verified.")
+		}
 		return
 	}
 
@@ -168,7 +191,7 @@ func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {
 		DecryptedDocumentBase64: base64.StdEncoding.EncodeToString(result.DecryptedDocument),
 	}
 
-	ctx.JSON(http.StatusOK, response)
+	respondSuccess(ctx, http.StatusOK, response)
 }
 
 func readPackageContent(ctx *gin.Context) ([]byte, error) {

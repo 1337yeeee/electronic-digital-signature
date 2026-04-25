@@ -12,7 +12,12 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	r := gin.Default()
 
 	r.GET("/health", func(ctx *gin.Context) {
-		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
+		ctx.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data": gin.H{
+				"status": "ok",
+			},
+		})
 	})
 
 	api := r.Group("/api/v1")
@@ -55,6 +60,10 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 
 func handlerNotConfigured(ctx *gin.Context) {
 	ctx.JSON(http.StatusInternalServerError, gin.H{
-		"error": "signature handler is not configured",
+		"success": false,
+		"error": gin.H{
+			"code":    "internal_error",
+			"message": "Requested handler is not configured.",
+		},
 	})
 }

@@ -3,9 +3,15 @@ package usecase
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"electronic-digital-signature/internal/infra/encryption"
+)
+
+var (
+	ErrInvalidEncryptedPackage = errors.New("invalid encrypted package")
+	ErrInvalidSignature        = errors.New("invalid signature")
 )
 
 type decryptPackageVerifier interface {
@@ -73,7 +79,7 @@ func (uc *VerifyDecryptPackageUseCase) Execute(ctx context.Context, input Verify
 
 	pkg, err := encryption.DecodePackage(input.PackageContent)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w", ErrInvalidEncryptedPackage)
 	}
 
 	result := &VerifyDecryptPackageResult{
@@ -82,16 +88,16 @@ func (uc *VerifyDecryptPackageUseCase) Execute(ctx context.Context, input Verify
 
 	decryptedDocument, err := uc.decryptor.Decrypt(pkg)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt package: %w", err)
+		return nil, fmt.Errorf("%w", ErrInvalidEncryptedPackage)
 	}
 
 	signature, err := base64.StdEncoding.DecodeString(pkg.SignatureBase64)
 	if err != nil {
-		return nil, fmt.Errorf("decode signature: %w", err)
+		return nil, fmt.Errorf("%w", ErrInvalidEncryptedPackage)
 	}
 
 	if err := uc.verifier.Verify(decryptedDocument, signature, uc.serverPublicKey); err != nil {
-		return nil, fmt.Errorf("invalid signature: %w", err)
+		return nil, fmt.Errorf("%w", ErrInvalidSignature)
 	}
 
 	result.DecryptedDocument = decryptedDocument

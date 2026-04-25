@@ -45,7 +45,7 @@ func TestHealthRoute(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
 	}
 
-	expectedBody := `{"status":"ok"}`
+	expectedBody := `{"data":{"status":"ok"},"success":true}`
 	if response.Body.String() != expectedBody {
 		t.Fatalf("expected body %s, got %s", expectedBody, response.Body.String())
 	}
@@ -62,10 +62,17 @@ func TestUploadDocumentRoute(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, response.Code)
 	}
 
-	var body dto.UploadDocumentResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+	var envelope struct {
+		Success bool                       `json:"success"`
+		Data    dto.UploadDocumentResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	body := envelope.Data
 
 	if body.DocumentID != "00000000-0000-4000-8000-000000000001" {
 		t.Fatalf("expected document_id from generator, got %q", body.DocumentID)
@@ -118,12 +125,15 @@ func TestUploadDocumentRouteRejectsNonDocxFile(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
 	}
 
-	var body map[string]string
+	var body dto.ErrorResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
-	if body["error"] != "document file must have .docx extension" {
-		t.Fatalf("unexpected error: %q", body["error"])
+	if body.Error.Code != "invalid_document_type" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
+	}
+	if body.Error.Message != "Document file must have .docx extension." {
+		t.Fatalf("unexpected error message: %q", body.Error.Message)
 	}
 }
 
@@ -160,10 +170,17 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
 	}
 
-	var body dto.SendDocumentResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+	var envelope struct {
+		Success bool                     `json:"success"`
+		Data    dto.SendDocumentResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	body := envelope.Data
 	if body.DocumentID != "document-id" {
 		t.Fatalf("expected document_id, got %q", body.DocumentID)
 	}
@@ -244,10 +261,17 @@ func TestVerifyDecryptPackageRouteAcceptsPackageJSON(t *testing.T) {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
 	}
 
-	var body dto.VerifyDecryptPackageResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+	var envelope struct {
+		Success bool                             `json:"success"`
+		Data    dto.VerifyDecryptPackageResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	body := envelope.Data
 	if !body.Valid {
 		t.Fatal("expected package to be valid")
 	}
@@ -297,10 +321,17 @@ func TestVerifyDecryptPackageRouteAcceptsPackageFile(t *testing.T) {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
 	}
 
-	var body dto.VerifyDecryptPackageResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+	var envelope struct {
+		Success bool                             `json:"success"`
+		Data    dto.VerifyDecryptPackageResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	body := envelope.Data
 	if !body.Valid {
 		t.Fatal("expected package to be valid")
 	}
@@ -323,12 +354,15 @@ func TestVerifyDecryptPackageRouteReturnsErrorForWrongServerPublicKey(t *testing
 		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, response.Code, response.Body.String())
 	}
 
-	var body map[string]string
+	var body dto.ErrorResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
-	if !strings.Contains(body["error"], "invalid signature") {
-		t.Fatalf("expected invalid signature error, got %q", body["error"])
+	if body.Error.Code != "invalid_signature" {
+		t.Fatalf("expected invalid_signature error code, got %q", body.Error.Code)
+	}
+	if body.Error.Message != "Package signature is invalid." {
+		t.Fatalf("unexpected error message: %q", body.Error.Message)
 	}
 }
 
