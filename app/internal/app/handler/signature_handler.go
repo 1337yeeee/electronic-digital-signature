@@ -1,9 +1,8 @@
 package handler
 
 import (
-	"crypto/rand"
+	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -22,7 +21,7 @@ type verifyClientSignatureUseCase interface {
 }
 
 type issueServerSignedMessageUseCase interface {
-	Execute(message *model.Message) (signature []byte, messageHash []byte, err error)
+	Execute(ctx context.Context, message *model.Message) (signature []byte, messageHash []byte, err error)
 }
 
 type SignatureHandler struct {
@@ -123,14 +122,11 @@ func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
 		messageText = randomServerMessage()
 	}
 
-	now := time.Now().UTC()
 	message := model.Message{
-		ID:        newRandomID(),
-		Message:   messageText,
-		CreatedAt: now,
+		Message: messageText,
 	}
 
-	signature, messageHash, err := h.issueServerSignedMessageUseCase.Execute(&message)
+	signature, messageHash, err := h.issueServerSignedMessageUseCase.Execute(ctx.Request.Context(), &message)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -147,14 +143,5 @@ func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
 }
 
 func randomServerMessage() string {
-	return "server message " + newRandomID()
-}
-
-func newRandomID() string {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return hex.EncodeToString([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
-	}
-
-	return hex.EncodeToString(bytes)
+	return "server message " + time.Now().UTC().Format(time.RFC3339Nano)
 }

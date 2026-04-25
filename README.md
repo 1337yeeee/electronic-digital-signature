@@ -26,3 +26,23 @@ export SERVER_PUBLIC_KEY_PATH=data/keys/server_public.pem
 
 Keep private keys out of git. Files matching `data/keys/*.pem` are ignored by
 default.
+
+## Local Postgres
+
+Start PostgreSQL for local development:
+
+```bash
+docker compose up -d postgres
+```
+
+Use these environment variables for the application:
+
+```bash
+export API_PORT=8080
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_USER=postgres
+export DB_PASSWORD=postgres
+export DB_NAME=eds_lab
+export SSL_MODE=disable
+```

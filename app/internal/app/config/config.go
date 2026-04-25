@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -40,14 +41,14 @@ type RedisConfig struct {
 
 func Load() (Config, error) {
 	return Config{
-		APIPort: os.Getenv("API_PORT"),
+		APIPort: getEnv("API_PORT", "8080"),
 
-		DBHost:     os.Getenv("DB_HOST"),
-		DBUser:     os.Getenv("DB_USER"),
+		DBHost:     getEnv("DB_HOST", "localhost"),
+		DBUser:     getEnv("DB_USER", "postgres"),
 		DBPassword: os.Getenv("DB_PASSWORD"),
-		DBName:     os.Getenv("DB_NAME"),
-		DBPort:     os.Getenv("DB_PORT"),
-		SSLMode:    os.Getenv("SSL_MODE"),
+		DBName:     getEnv("DB_NAME", "eds_lab"),
+		DBPort:     getEnv("DB_PORT", "5432"),
+		SSLMode:    getEnv("SSL_MODE", "disable"),
 
 		JWTSecret: os.Getenv("JWT_SECRET"),
 
@@ -69,8 +70,27 @@ func Load() (Config, error) {
 	}, nil
 }
 
+func (c Config) PostgresDSN() string {
+	return fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+		c.DBHost,
+		c.DBUser,
+		c.DBPassword,
+		c.DBName,
+		c.DBPort,
+		c.SSLMode,
+	)
+}
+
 func (c Config) Get(key string) string {
 	return os.Getenv(key)
+}
+
+func getEnv(key, def string) string {
+	if val, ok := os.LookupEnv(key); ok {
+		return val
+	}
+	return def
 }
 
 func getEnvAsInt(key string, def int) int {

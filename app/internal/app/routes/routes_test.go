@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -17,6 +18,7 @@ import (
 	"electronic-digital-signature/internal/app/dto"
 	"electronic-digital-signature/internal/app/handler"
 	"electronic-digital-signature/internal/app/usecase"
+	"electronic-digital-signature/internal/domain/model"
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/keys"
 
@@ -186,7 +188,7 @@ func TestVerifyClientSignatureRouteRejectsInvalidBase64(t *testing.T) {
 func TestIssueServerMessageRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)
-	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{
+	router, messageRepository := setupRouterWithSignatureHandlerAndRepository(keys.ServerKeyPair{
 		PrivateKey: privateKey,
 		PublicKey:  publicKey,
 	})
@@ -199,8 +201,8 @@ func TestIssueServerMessageRoute(t *testing.T) {
 	}
 
 	body := decodeIssueServerMessageResponse(t, response)
-	if body.ID == "" {
-		t.Fatal("expected response id")
+	if body.ID != "00000000-0000-4000-8000-000000000001" {
+		t.Fatalf("expected response id from generator, got %q", body.ID)
 	}
 	if _, err := time.Parse(time.RFC3339Nano, body.CreatedAt); err != nil {
 		t.Fatalf("parse created_at: %v", err)
@@ -213,6 +215,15 @@ func TestIssueServerMessageRoute(t *testing.T) {
 	}
 
 	assertServerMessageSignature(t, body, publicKey)
+	if len(messageRepository.messages) != 1 {
+		t.Fatalf("expected 1 saved message, got %d", len(messageRepository.messages))
+	}
+	if messageRepository.messages[0].ID != body.ID {
+		t.Fatalf("expected saved message id %q, got %q", body.ID, messageRepository.messages[0].ID)
+	}
+	if len(messageRepository.messages[0].Signature) == 0 {
+		t.Fatal("expected saved message signature")
+	}
 }
 
 func TestIssueServerMessageRouteGeneratesMessageWhenRequestIsEmpty(t *testing.T) {
@@ -284,15 +295,29 @@ func TestIssueServerMessageRouteReturnsErrorWhenPrivateKeyIsMissing(t *testing.T
 }
 
 func setupRouterWithSignatureHandler(serverKeys keys.ServerKeyPair) *gin.Engine {
-	signatureProvider := crypto.NewECDSASHA256Provider()
+	router, _ := setupRouterWithSignatureHandlerAndRepository(serverKeys)
+	return router
+}
 
-	return SetupRouter(&container.AppContainer{
+func setupRouterWithSignatureHandlerAndRepository(serverKeys keys.ServerKeyPair) (*gin.Engine, *fakeMessageRepository) {
+	signatureProvider := crypto.NewECDSASHA256Provider()
+	messageRepository := &fakeMessageRepository{}
+
+	router := SetupRouter(&container.AppContainer{
 		SignatureHandler: handler.NewSignatureHandler(
 			serverKeys,
 			usecase.NewVerifyClientSignatureUseCase(signatureProvider),
-			usecase.NewIssueServerSignedMessageUseCase(serverKeys.PrivateKey, signatureProvider),
+			usecase.NewIssueServerSignedMessageUseCase(
+				serverKeys.PrivateKey,
+				signatureProvider,
+				messageRepository,
+				fakeIDGenerator{id: "00000000-0000-4000-8000-000000000001"},
+				"server",
+			),
 		),
 	})
+
+	return router, messageRepository
 }
 
 func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
@@ -371,4 +396,21 @@ func pemBlock(blockType string, bytes []byte) []byte {
 	return []byte("-----BEGIN " + blockType + "-----\n" +
 		base64.StdEncoding.EncodeToString(bytes) +
 		"\n-----END " + blockType + "-----\n")
+}
+
+type fakeMessageRepository struct {
+	messages []model.Message
+}
+
+func (r *fakeMessageRepository) Create(_ context.Context, message *model.Message) error {
+	r.messages = append(r.messages, *message)
+	return nil
+}
+
+type fakeIDGenerator struct {
+	id string
+}
+
+func (g fakeIDGenerator) Generate() (string, error) {
+	return g.id, nil
 }
