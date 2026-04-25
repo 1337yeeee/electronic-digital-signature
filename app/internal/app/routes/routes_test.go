@@ -52,7 +52,8 @@ func TestHealthRoute(t *testing.T) {
 
 func TestUploadDocumentRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	router, documentRepository, documentStorage := setupRouterWithDocumentHandler()
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	router, documentRepository, documentStorage := setupRouterWithDocumentHandler(privateKey)
 
 	response := performMultipartDocumentUpload(t, router, "contract.docx")
 
@@ -83,6 +84,12 @@ func TestUploadDocumentRoute(t *testing.T) {
 	if len(documentRepository.documents) != 1 {
 		t.Fatalf("expected 1 saved document, got %d", len(documentRepository.documents))
 	}
+	if len(documentRepository.documents[0].Hash) == 0 {
+		t.Fatal("expected saved document hash")
+	}
+	if len(documentRepository.documents[0].Signature) == 0 {
+		t.Fatal("expected saved document signature")
+	}
 	documentXML := readDocxDocumentXML(t, documentStorage.content)
 	if !strings.Contains(documentXML, "Document UUID: 00000000-0000-4000-8000-000000000001") {
 		t.Fatalf("expected document UUID metadata in document.xml, got %q", documentXML)
@@ -90,11 +97,19 @@ func TestUploadDocumentRoute(t *testing.T) {
 	if !strings.Contains(documentXML, "Date: ") {
 		t.Fatalf("expected date metadata in document.xml, got %q", documentXML)
 	}
+
+	assertDocumentSignature(t, documentStorage.content, documentRepository.documents[0], publicKey)
+	tamperedContent := append([]byte(nil), documentStorage.content...)
+	tamperedContent[len(tamperedContent)-1] ^= 0xff
+	if err := crypto.NewECDSASHA256Provider().Verify(tamperedContent, documentRepository.documents[0].Signature, publicKey); err == nil {
+		t.Fatal("expected tampered document verification to fail")
+	}
 }
 
 func TestUploadDocumentRouteRejectsNonDocxFile(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	router, _, _ := setupRouterWithDocumentHandler()
+	privateKey, _ := generateECDSAKeyPairPEM(t)
+	router, _, _ := setupRouterWithDocumentHandler(privateKey)
 
 	response := performMultipartDocumentUpload(t, router, "contract.txt")
 
@@ -444,9 +459,10 @@ func setupRouterWithSignatureHandlerAndRepository(serverKeys keys.ServerKeyPair)
 	return router, messageRepository
 }
 
-func setupRouterWithDocumentHandler() (*gin.Engine, *fakeDocumentRepository, *fakeDocumentStorage) {
+func setupRouterWithDocumentHandler(privateKey []byte) (*gin.Engine, *fakeDocumentRepository, *fakeDocumentStorage) {
 	documentRepository := &fakeDocumentRepository{}
 	documentStorage := &fakeDocumentStorage{}
+	signatureProvider := crypto.NewECDSASHA256Provider()
 
 	router := SetupRouter(&container.AppContainer{
 		DocumentHandler: handler.NewDocumentHandler(
@@ -455,6 +471,8 @@ func setupRouterWithDocumentHandler() (*gin.Engine, *fakeDocumentRepository, *fa
 				documentStorage,
 				fakeIDGenerator{id: "00000000-0000-4000-8000-000000000001"},
 				docx.NewProcessor(),
+				signatureProvider,
+				privateKey,
 			),
 		),
 	})
@@ -543,6 +561,19 @@ func assertServerMessageSignature(t *testing.T, body dto.IssueServerMessageRespo
 	}
 	if err := provider.Verify([]byte(body.Message), signature, publicKey); err != nil {
 		t.Fatalf("verify server message signature: %v", err)
+	}
+}
+
+func assertDocumentSignature(t *testing.T, content []byte, document model.Document, publicKey []byte) {
+	t.Helper()
+
+	provider := crypto.NewECDSASHA256Provider()
+	expectedHash := provider.Hash(content)
+	if string(document.Hash) != string(expectedHash) {
+		t.Fatalf("expected document hash %x, got %x", expectedHash, document.Hash)
+	}
+	if err := provider.Verify(content, document.Signature, publicKey); err != nil {
+		t.Fatalf("verify document signature: %v", err)
 	}
 }
 

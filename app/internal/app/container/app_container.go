@@ -59,6 +59,8 @@ func New(cfg config.Config) (*AppContainer, error) {
 		storage.NewLocalDocumentStorage(cfg.DocumentStorage.Path),
 		idGenerator,
 		docx.NewProcessor(),
+		signatureProvider,
+		serverKeys.PrivateKey,
 	)
 
 	return &AppContainer{

@@ -28,6 +28,11 @@ type documentProcessor interface {
 	AddMetadata(content []byte, documentID string, date time.Time) ([]byte, error)
 }
 
+type documentSigner interface {
+	Hash(message []byte) []byte
+	Sign(message []byte, privateKey []byte) ([]byte, error)
+}
+
 type UploadDocumentInput struct {
 	OwnerEmail       string
 	RecipientEmail   string
@@ -41,14 +46,25 @@ type UploadDocumentUseCase struct {
 	storage     documentStorage
 	idGenerator documentIDGenerator
 	processor   documentProcessor
+	signer      documentSigner
+	privateKey  []byte
 }
 
-func NewUploadDocumentUseCase(repository documentRepository, storage documentStorage, idGenerator documentIDGenerator, processor documentProcessor) *UploadDocumentUseCase {
+func NewUploadDocumentUseCase(
+	repository documentRepository,
+	storage documentStorage,
+	idGenerator documentIDGenerator,
+	processor documentProcessor,
+	signer documentSigner,
+	privateKey []byte,
+) *UploadDocumentUseCase {
 	return &UploadDocumentUseCase{
 		repository:  repository,
 		storage:     storage,
 		idGenerator: idGenerator,
 		processor:   processor,
+		signer:      signer,
+		privateKey:  privateKey,
 	}
 }
 
@@ -64,6 +80,12 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 	}
 	if uc.processor == nil {
 		return nil, fmt.Errorf("document processor is not configured")
+	}
+	if uc.signer == nil {
+		return nil, fmt.Errorf("document signer is not configured")
+	}
+	if len(uc.privateKey) == 0 {
+		return nil, fmt.Errorf("server private key is not configured")
 	}
 	if input.Content == nil {
 		return nil, fmt.Errorf("document file is required")
@@ -88,6 +110,12 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 		return nil, err
 	}
 
+	documentHash := uc.signer.Hash(updatedContent)
+	signature, err := uc.signer.Sign(updatedContent, uc.privateKey)
+	if err != nil {
+		return nil, err
+	}
+
 	storedPath, err := uc.storage.Save(ctx, id, input.OriginalFileName, bytes.NewReader(updatedContent))
 	if err != nil {
 		return nil, err
@@ -100,7 +128,10 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 		OriginalFileName: input.OriginalFileName,
 		StoredPath:       storedPath,
 		MimeType:         input.MimeType,
+		Hash:             documentHash,
+		Signature:        signature,
 		CreatedAt:        now,
+		SignedAt:         now,
 	}
 
 	if err := uc.repository.Create(ctx, document); err != nil {
