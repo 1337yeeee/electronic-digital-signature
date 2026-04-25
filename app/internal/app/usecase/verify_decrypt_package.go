@@ -32,8 +32,6 @@ type VerifyDecryptPackageMetadata struct {
 }
 
 type VerifyDecryptPackageResult struct {
-	Valid             bool
-	Error             string
 	Metadata          VerifyDecryptPackageMetadata
 	DecryptedDocument []byte
 }
@@ -84,25 +82,18 @@ func (uc *VerifyDecryptPackageUseCase) Execute(ctx context.Context, input Verify
 
 	decryptedDocument, err := uc.decryptor.Decrypt(pkg)
 	if err != nil {
-		result.Valid = false
-		result.Error = err.Error()
-		return result, nil
+		return nil, fmt.Errorf("decrypt package: %w", err)
 	}
 
 	signature, err := base64.StdEncoding.DecodeString(pkg.SignatureBase64)
 	if err != nil {
-		result.Valid = false
-		result.Error = fmt.Sprintf("decode signature: %v", err)
-		return result, nil
+		return nil, fmt.Errorf("decode signature: %w", err)
 	}
 
 	if err := uc.verifier.Verify(decryptedDocument, signature, uc.serverPublicKey); err != nil {
-		result.Valid = false
-		result.Error = err.Error()
-		return result, nil
+		return nil, fmt.Errorf("invalid signature: %w", err)
 	}
 
-	result.Valid = true
 	result.DecryptedDocument = decryptedDocument
 	return result, nil
 }

@@ -154,8 +154,7 @@ func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {
 	}
 
 	response := dto.VerifyDecryptPackageResponse{
-		Valid: result.Valid,
-		Error: result.Error,
+		Valid: true,
 		Metadata: dto.VerifyDecryptPackageMetadata{
 			DocumentID:          result.Metadata.DocumentID,
 			Version:             result.Metadata.Version,
@@ -166,9 +165,7 @@ func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {
 			MimeType:            result.Metadata.MimeType,
 			HashBase64:          result.Metadata.HashBase64,
 		},
-	}
-	if result.Valid {
-		response.DecryptedDocumentBase64 = base64.StdEncoding.EncodeToString(result.DecryptedDocument)
+		DecryptedDocumentBase64: base64.StdEncoding.EncodeToString(result.DecryptedDocument),
 	}
 
 	ctx.JSON(http.StatusOK, response)

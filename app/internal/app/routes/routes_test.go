@@ -249,7 +249,7 @@ func TestVerifyDecryptPackageRouteAcceptsPackageJSON(t *testing.T) {
 		t.Fatalf("decode response body: %v", err)
 	}
 	if !body.Valid {
-		t.Fatalf("expected package to be valid, got error %q", body.Error)
+		t.Fatal("expected package to be valid")
 	}
 	if body.Metadata.DocumentID != "document-id" {
 		t.Fatalf("expected document metadata, got %+v", body.Metadata)
@@ -302,11 +302,11 @@ func TestVerifyDecryptPackageRouteAcceptsPackageFile(t *testing.T) {
 		t.Fatalf("decode response body: %v", err)
 	}
 	if !body.Valid {
-		t.Fatalf("expected package to be valid, got error %q", body.Error)
+		t.Fatal("expected package to be valid")
 	}
 }
 
-func TestVerifyDecryptPackageRouteReturnsInvalidForWrongServerPublicKey(t *testing.T) {
+func TestVerifyDecryptPackageRouteReturnsErrorForWrongServerPublicKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, _ := generateECDSAKeyPairPEM(t)
 	_, wrongPublicKey := generateECDSAKeyPairPEM(t)
@@ -319,19 +319,16 @@ func TestVerifyDecryptPackageRouteReturnsInvalidForWrongServerPublicKey(t *testi
 
 	router.ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, response.Code, response.Body.String())
 	}
 
-	var body dto.VerifyDecryptPackageResponse
+	var body map[string]string
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response body: %v", err)
 	}
-	if body.Valid {
-		t.Fatal("expected package to be invalid")
-	}
-	if body.DecryptedDocumentBase64 != "" {
-		t.Fatalf("expected invalid response without decrypted document, got %q", body.DecryptedDocumentBase64)
+	if !strings.Contains(body["error"], "invalid signature") {
+		t.Fatalf("expected invalid signature error, got %q", body["error"])
 	}
 }
 
