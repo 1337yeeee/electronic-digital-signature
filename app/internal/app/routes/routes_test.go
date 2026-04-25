@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/ecdsa"
@@ -23,6 +24,7 @@ import (
 	"electronic-digital-signature/internal/app/usecase"
 	"electronic-digital-signature/internal/domain/model"
 	"electronic-digital-signature/internal/infra/crypto"
+	"electronic-digital-signature/internal/infra/docx"
 	"electronic-digital-signature/internal/infra/keys"
 
 	"github.com/gin-gonic/gin"
@@ -81,8 +83,12 @@ func TestUploadDocumentRoute(t *testing.T) {
 	if len(documentRepository.documents) != 1 {
 		t.Fatalf("expected 1 saved document, got %d", len(documentRepository.documents))
 	}
-	if documentStorage.content != "docx content" {
-		t.Fatalf("expected stored content, got %q", documentStorage.content)
+	documentXML := readDocxDocumentXML(t, documentStorage.content)
+	if !strings.Contains(documentXML, "Document UUID: 00000000-0000-4000-8000-000000000001") {
+		t.Fatalf("expected document UUID metadata in document.xml, got %q", documentXML)
+	}
+	if !strings.Contains(documentXML, "Date: ") {
+		t.Fatalf("expected date metadata in document.xml, got %q", documentXML)
 	}
 }
 
@@ -448,6 +454,7 @@ func setupRouterWithDocumentHandler() (*gin.Engine, *fakeDocumentRepository, *fa
 				documentRepository,
 				documentStorage,
 				fakeIDGenerator{id: "00000000-0000-4000-8000-000000000001"},
+				docx.NewProcessor(),
 			),
 		),
 	})
@@ -489,7 +496,7 @@ func performMultipartDocumentUpload(t *testing.T, router *gin.Engine, fileName s
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	if _, err := io.Copy(fileWriter, strings.NewReader("docx content")); err != nil {
+	if _, err := io.Copy(fileWriter, bytes.NewReader(minimalDocx(t))); err != nil {
 		t.Fatalf("write form file: %v", err)
 	}
 	if err := writer.Close(); err != nil {
@@ -566,6 +573,58 @@ func pemBlock(blockType string, bytes []byte) []byte {
 		"\n-----END " + blockType + "-----\n")
 }
 
+func minimalDocx(t *testing.T) []byte {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+
+	documentXML, err := writer.Create("word/document.xml")
+	if err != nil {
+		t.Fatalf("create document.xml: %v", err)
+	}
+	if _, err := documentXML.Write([]byte(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>`)); err != nil {
+		t.Fatalf("write document.xml: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close docx zip: %v", err)
+	}
+
+	return buffer.Bytes()
+}
+
+func readDocxDocumentXML(t *testing.T, content []byte) string {
+	t.Helper()
+
+	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("open stored docx: %v", err)
+	}
+
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+
+		source, err := file.Open()
+		if err != nil {
+			t.Fatalf("open document.xml: %v", err)
+		}
+		defer source.Close()
+
+		documentXML, err := io.ReadAll(source)
+		if err != nil {
+			t.Fatalf("read document.xml: %v", err)
+		}
+
+		return string(documentXML)
+	}
+
+	t.Fatal("word/document.xml not found")
+	return ""
+}
+
 type fakeMessageRepository struct {
 	messages []model.Message
 }
@@ -595,7 +654,7 @@ func (r *fakeDocumentRepository) Create(_ context.Context, document *model.Docum
 }
 
 type fakeDocumentStorage struct {
-	content string
+	content []byte
 }
 
 func (s *fakeDocumentStorage) Save(_ context.Context, _ string, originalFileName string, content io.Reader) (string, error) {
@@ -604,7 +663,7 @@ func (s *fakeDocumentStorage) Save(_ context.Context, _ string, originalFileName
 		return "", err
 	}
 
-	s.content = string(storedContent)
+	s.content = storedContent
 	return "stored/" + originalFileName, nil
 }
 

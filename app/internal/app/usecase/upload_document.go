@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -23,6 +24,10 @@ type documentIDGenerator interface {
 	Generate() (string, error)
 }
 
+type documentProcessor interface {
+	AddMetadata(content []byte, documentID string, date time.Time) ([]byte, error)
+}
+
 type UploadDocumentInput struct {
 	OwnerEmail       string
 	RecipientEmail   string
@@ -35,13 +40,15 @@ type UploadDocumentUseCase struct {
 	repository  documentRepository
 	storage     documentStorage
 	idGenerator documentIDGenerator
+	processor   documentProcessor
 }
 
-func NewUploadDocumentUseCase(repository documentRepository, storage documentStorage, idGenerator documentIDGenerator) *UploadDocumentUseCase {
+func NewUploadDocumentUseCase(repository documentRepository, storage documentStorage, idGenerator documentIDGenerator, processor documentProcessor) *UploadDocumentUseCase {
 	return &UploadDocumentUseCase{
 		repository:  repository,
 		storage:     storage,
 		idGenerator: idGenerator,
+		processor:   processor,
 	}
 }
 
@@ -55,6 +62,9 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 	if uc.idGenerator == nil {
 		return nil, fmt.Errorf("document id generator is not configured")
 	}
+	if uc.processor == nil {
+		return nil, fmt.Errorf("document processor is not configured")
+	}
 	if input.Content == nil {
 		return nil, fmt.Errorf("document file is required")
 	}
@@ -67,7 +77,18 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 		return nil, err
 	}
 
-	storedPath, err := uc.storage.Save(ctx, id, input.OriginalFileName, input.Content)
+	now := time.Now().UTC()
+	content, err := io.ReadAll(input.Content)
+	if err != nil {
+		return nil, fmt.Errorf("read uploaded document: %w", err)
+	}
+
+	updatedContent, err := uc.processor.AddMetadata(content, id, now)
+	if err != nil {
+		return nil, err
+	}
+
+	storedPath, err := uc.storage.Save(ctx, id, input.OriginalFileName, bytes.NewReader(updatedContent))
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +100,7 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 		OriginalFileName: input.OriginalFileName,
 		StoredPath:       storedPath,
 		MimeType:         input.MimeType,
-		CreatedAt:        time.Now().UTC(),
+		CreatedAt:        now,
 	}
 
 	if err := uc.repository.Create(ctx, document); err != nil {
