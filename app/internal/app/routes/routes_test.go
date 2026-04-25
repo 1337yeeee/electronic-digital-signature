@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"electronic-digital-signature/internal/app/container"
 	"electronic-digital-signature/internal/app/dto"
@@ -181,6 +182,106 @@ func TestVerifyClientSignatureRouteRejectsInvalidBase64(t *testing.T) {
 	}
 }
 
+func TestIssueServerMessageRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{
+		PrivateKey: privateKey,
+		PublicKey:  publicKey,
+	})
+
+	requestBody := dto.IssueServerMessageRequest{Message: "server generated proof"}
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", requestBody)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	body := decodeIssueServerMessageResponse(t, response)
+	if body.ID == "" {
+		t.Fatal("expected response id")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, body.CreatedAt); err != nil {
+		t.Fatalf("parse created_at: %v", err)
+	}
+	if body.Message != requestBody.Message {
+		t.Fatalf("expected message %q, got %q", requestBody.Message, body.Message)
+	}
+	if body.Algorithm != crypto.ECDSASHA256Algorithm {
+		t.Fatalf("expected algorithm %q, got %q", crypto.ECDSASHA256Algorithm, body.Algorithm)
+	}
+
+	assertServerMessageSignature(t, body, publicKey)
+}
+
+func TestIssueServerMessageRouteGeneratesMessageWhenRequestIsEmpty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{
+		PrivateKey: privateKey,
+		PublicKey:  publicKey,
+	})
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	body := decodeIssueServerMessageResponse(t, response)
+	if body.Message == "" {
+		t.Fatal("expected generated message")
+	}
+
+	assertServerMessageSignature(t, body, publicKey)
+}
+
+func TestIssueServerMessageRouteGeneratesMessageWhenBodyIsEmpty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{
+		PrivateKey: privateKey,
+		PublicKey:  publicKey,
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/server/messages", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	body := decodeIssueServerMessageResponse(t, response)
+	if body.Message == "" {
+		t.Fatal("expected generated message")
+	}
+
+	assertServerMessageSignature(t, body, publicKey)
+}
+
+func TestIssueServerMessageRouteReturnsErrorWhenPrivateKeyIsMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{
+		Message: "server generated proof",
+	})
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, response.Code)
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body["error"] != "server private key is not loaded" {
+		t.Fatalf("unexpected error: %q", body["error"])
+	}
+}
+
 func setupRouterWithSignatureHandler(serverKeys keys.ServerKeyPair) *gin.Engine {
 	return SetupRouter(&container.AppContainer{
 		SignatureHandler: handler.NewSignatureHandler(serverKeys, crypto.NewECDSASHA256Provider()),
@@ -202,6 +303,40 @@ func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, b
 	router.ServeHTTP(response, request)
 
 	return response
+}
+
+func decodeIssueServerMessageResponse(t *testing.T, response *httptest.ResponseRecorder) dto.IssueServerMessageResponse {
+	t.Helper()
+
+	var body dto.IssueServerMessageResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+
+	return body
+}
+
+func assertServerMessageSignature(t *testing.T, body dto.IssueServerMessageResponse, publicKey []byte) {
+	t.Helper()
+
+	provider := crypto.NewECDSASHA256Provider()
+
+	messageHash, err := base64.StdEncoding.DecodeString(body.HashBase64)
+	if err != nil {
+		t.Fatalf("decode hash_base64: %v", err)
+	}
+	expectedHash := provider.Hash([]byte(body.Message))
+	if string(messageHash) != string(expectedHash) {
+		t.Fatalf("expected hash %x, got %x", expectedHash, messageHash)
+	}
+
+	signature, err := base64.StdEncoding.DecodeString(body.SignatureBase64)
+	if err != nil {
+		t.Fatalf("decode signature_base64: %v", err)
+	}
+	if err := provider.Verify([]byte(body.Message), signature, publicKey); err != nil {
+		t.Fatalf("verify server message signature: %v", err)
+	}
 }
 
 func generateECDSAKeyPairPEM(t *testing.T) ([]byte, []byte) {
