@@ -29,6 +29,8 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.POST("/documents", handlerNotConfigured)
 		api.POST("/documents/:id/send", handlerNotConfigured)
 		api.POST("/documents/verify-decrypt", handlerNotConfigured)
+		api.POST("/users/register", handlerNotConfigured)
+		api.GET("/users/:id", handlerNotConfigured)
 		return r
 	}
 
@@ -53,6 +55,14 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.POST("/documents", appContainer.DocumentHandler.UploadDocument)
 		api.POST("/documents/:id/send", appContainer.DocumentHandler.SendDocument)
 		api.POST("/documents/verify-decrypt", appContainer.DocumentHandler.VerifyDecryptPackage)
+	}
+
+	if appContainer.UserHandler == nil {
+		api.POST("/users/register", handlerNotConfigured)
+		api.GET("/users/:id", handlerNotConfigured)
+	} else {
+		api.POST("/users/register", appContainer.UserHandler.Register)
+		api.GET("/users/:id", appContainer.UserHandler.GetByID)
 	}
 
 	return r

@@ -22,8 +22,10 @@ type AppContainer struct {
 	DB                 *gorm.DB
 	MessageRepository  *repository.MessageRepository
 	DocumentRepository *repository.DocumentRepository
+	UserRepository     *repository.UserRepository
 	SignatureHandler   *handler.SignatureHandler
 	DocumentHandler    *handler.DocumentHandler
+	UserHandler        *handler.UserHandler
 	Mailer             *mailer.SMTPMailer
 }
 
@@ -48,6 +50,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 
 	messageRepository := repository.NewMessageRepository(db)
 	documentRepository := repository.NewDocumentRepository(db)
+	userRepository := repository.NewUserRepository(db)
 	smtpMailer := mailer.NewSMTPMailer(cfg.SMTP)
 	documentStorage := storage.NewLocalDocumentStorage(cfg.DocumentStorage.Path)
 	signatureProvider := crypto.NewECDSASHA256Provider()
@@ -82,12 +85,15 @@ func New(cfg config.Config) (*AppContainer, error) {
 		signatureProvider,
 		serverKeys.PublicKey,
 	)
+	registerUserUseCase := usecase.NewRegisterUserUseCase(userRepository, idGenerator)
+	getUserUseCase := usecase.NewGetUserUseCase(userRepository)
 
 	return &AppContainer{
 		ServerKeys:         serverKeys,
 		DB:                 db,
 		MessageRepository:  messageRepository,
 		DocumentRepository: documentRepository,
+		UserRepository:     userRepository,
 		Mailer:             smtpMailer,
 		SignatureHandler: handler.NewSignatureHandler(
 			serverKeys,
@@ -96,5 +102,6 @@ func New(cfg config.Config) (*AppContainer, error) {
 			getServerSignedMessageUseCase,
 		),
 		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase, sendDocumentUseCase, verifyDecryptPackageUseCase),
+		UserHandler:     handler.NewUserHandler(registerUserUseCase, getUserUseCase),
 	}, nil
 }

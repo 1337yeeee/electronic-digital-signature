@@ -182,6 +182,146 @@ func TestUploadDocumentRouteRejectsTooLargeDocument(t *testing.T) {
 	}
 }
 
+func TestRegisterUserRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	userRepository := &fakeUserRepository{}
+	router := setupRouterWithUserHandler(userRepository)
+	_, publicKey := generateECDSAKeyPairPEM(t)
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/users/register", dto.RegisterUserRequest{
+		Email:        "user@example.com",
+		Name:         "Lab User",
+		Password:     "secret-password",
+		PublicKeyPEM: string(publicKey),
+	})
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, response.Code, response.Body.String())
+	}
+
+	var envelope struct {
+		Success bool             `json:"success"`
+		Data    dto.UserResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	if envelope.Data.Email != "user@example.com" {
+		t.Fatalf("expected user email, got %q", envelope.Data.Email)
+	}
+	if envelope.Data.Name != "Lab User" {
+		t.Fatalf("expected user name, got %q", envelope.Data.Name)
+	}
+	if envelope.Data.PublicKeyPEM != strings.TrimSpace(string(publicKey)) {
+		t.Fatalf("expected public key pem, got %q", envelope.Data.PublicKeyPEM)
+	}
+	if len(userRepository.users) != 1 {
+		t.Fatalf("expected 1 saved user, got %d", len(userRepository.users))
+	}
+	if userRepository.users[0].PasswordHash == "secret-password" || userRepository.users[0].PasswordHash == "" {
+		t.Fatal("expected password hash to be stored instead of raw password")
+	}
+}
+
+func TestRegisterUserRouteRejectsDuplicateEmail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	userRepository := &fakeUserRepository{
+		users: []model.User{
+			{
+				ID:           "user-id",
+				Email:        "user@example.com",
+				Name:         "Existing User",
+				PasswordHash: "hash",
+			},
+		},
+	}
+	router := setupRouterWithUserHandler(userRepository)
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/users/register", dto.RegisterUserRequest{
+		Email:    "user@example.com",
+		Name:     "Another User",
+		Password: "secret-password",
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "email_already_exists" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
+	}
+}
+
+func TestRegisterUserRouteRejectsInvalidPublicKeyPEM(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := setupRouterWithUserHandler(&fakeUserRepository{})
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/users/register", dto.RegisterUserRequest{
+		Email:        "user@example.com",
+		Name:         "Lab User",
+		Password:     "secret-password",
+		PublicKeyPEM: "not-a-pem-key",
+	})
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "invalid_public_key" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
+	}
+}
+
+func TestGetUserRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	userRepository := &fakeUserRepository{
+		users: []model.User{
+			{
+				ID:           "user-id",
+				Email:        "user@example.com",
+				Name:         "Lab User",
+				PasswordHash: "hash",
+				PublicKeyPEM: "pem",
+				CreatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	router := setupRouterWithUserHandler(userRepository)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/users/user-id", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var envelope struct {
+		Success bool             `json:"success"`
+		Data    dto.UserResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	if envelope.Data.ID != "user-id" {
+		t.Fatalf("expected user id, got %q", envelope.Data.ID)
+	}
+}
+
 func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	documentRepository := &fakeDocumentRepository{
@@ -885,6 +1025,15 @@ func setupRouterWithVerifyDecryptPackageHandler(publicKey []byte) *gin.Engine {
 	})
 }
 
+func setupRouterWithUserHandler(userRepository *fakeUserRepository) *gin.Engine {
+	return SetupRouter(&container.AppContainer{
+		UserHandler: handler.NewUserHandler(
+			usecase.NewRegisterUserUseCase(userRepository, fakeIDGenerator{id: "user-id"}),
+			usecase.NewGetUserUseCase(userRepository),
+		),
+	})
+}
+
 func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -1245,6 +1394,35 @@ func (m *fakeMailer) SendEmail(_ context.Context, to []string, subject, body str
 	m.body = body
 	m.attachments = attachments
 	return m.err
+}
+
+type fakeUserRepository struct {
+	users []model.User
+}
+
+func (r *fakeUserRepository) Create(_ context.Context, user *model.User) error {
+	r.users = append(r.users, *user)
+	return nil
+}
+
+func (r *fakeUserRepository) FindByID(_ context.Context, id string) (*model.User, error) {
+	for i := range r.users {
+		if r.users[i].ID == id {
+			return &r.users[i], nil
+		}
+	}
+
+	return nil, gorm.ErrRecordNotFound
+}
+
+func (r *fakeUserRepository) FindByEmail(_ context.Context, email string) (*model.User, error) {
+	for i := range r.users {
+		if r.users[i].Email == email {
+			return &r.users[i], nil
+		}
+	}
+
+	return nil, gorm.ErrRecordNotFound
 }
 
 type fakeIDGenerator struct {
