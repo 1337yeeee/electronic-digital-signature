@@ -1,5 +1,16 @@
 # Electronic Digital Signature Lab
 
+## API specification
+
+The project includes a client-facing OpenAPI description in
+`openapi.yaml` at the repository root.
+
+You can use it to:
+
+- review all endpoints, requests, responses, and error formats;
+- inspect base64 and PEM field formats;
+- import the API into Swagger UI, Redoc, or client generators.
+
 ## Server keys
 
 The server expects an ECDSA private/public key pair in PEM format. For local

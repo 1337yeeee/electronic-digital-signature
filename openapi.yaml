@@ -1,0 +1,713 @@
+openapi: 3.0.3
+info:
+  title: Electronic Digital Signature Lab API
+  version: "1.0.0"
+  description: |
+    API for demonstrating electronic digital signature (EDS) workflows:
+    document upload and signing, encrypted package delivery, signature
+    verification, and encrypted package verification/decryption.
+
+    Important response-format note:
+    - `/health` and `/api/v1/documents*` use the common envelope
+      `{ "success": boolean, "data" | "error": ... }`.
+    - `/api/v1/server*` and `/api/v1/signatures/verify` currently use their
+      legacy response shapes directly.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Health
+  - name: Server Keys
+  - name: Server Messages
+  - name: Signatures
+  - name: Documents
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthSuccessEnvelope"
+  /api/v1/server/public-key:
+    get:
+      tags: [Server Keys]
+      summary: Get server public key
+      description: Returns the server ECDSA public key in PEM format.
+      responses:
+        "200":
+          description: Server public key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerPublicKeyResponse"
+        "500":
+          description: Server public key is not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyErrorResponse"
+              examples:
+                missingKey:
+                  value:
+                    error: server public key is not loaded
+  /api/v1/server/messages:
+    post:
+      tags: [Server Messages]
+      summary: Create a server-signed message
+      description: |
+        Creates a message signed by the server private key. If `message` is
+        omitted or empty, the server generates a message automatically.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueServerMessageRequest"
+      responses:
+        "200":
+          description: Signed message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueServerMessageResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyErrorResponse"
+              examples:
+                invalidBody:
+                  value:
+                    error: invalid request body
+        "500":
+          description: Internal server issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyErrorResponse"
+              examples:
+                missingPrivateKey:
+                  value:
+                    error: server private key is not loaded
+  /api/v1/server/messages/{id}:
+    get:
+      tags: [Server Messages]
+      summary: Get a previously created server-signed message
+      parameters:
+        - $ref: "#/components/parameters/MessageID"
+      responses:
+        "200":
+          description: Signed message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueServerMessageResponse"
+        "400":
+          description: Missing message id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyErrorResponse"
+              examples:
+                missingId:
+                  value:
+                    error: message id is required
+        "404":
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyErrorResponse"
+              examples:
+                notFound:
+                  value:
+                    error: message not found
+        "500":
+          description: Internal server issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyErrorResponse"
+  /api/v1/signatures/verify:
+    post:
+      tags: [Signatures]
+      summary: Verify client signature
+      description: |
+        Verifies a client-provided signature against a plain-text message and a
+        client public key. The signature must be base64-encoded and the public
+        key must be PEM-encoded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyClientSignatureRequest"
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyClientSignatureResponse"
+              examples:
+                valid:
+                  value:
+                    valid: true
+                invalid:
+                  value:
+                    valid: false
+                    error: invalid signature
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyClientSignatureResponse"
+              examples:
+                emptyMessage:
+                  value:
+                    valid: false
+                    error: message is required
+                emptyPublicKey:
+                  value:
+                    valid: false
+                    error: public_key is required
+                emptySignature:
+                  value:
+                    valid: false
+                    error: signature_base64 is required
+                invalidBase64:
+                  value:
+                    valid: false
+                    error: signature_base64 must be valid base64
+                invalidBody:
+                  value:
+                    valid: false
+                    error: invalid request body
+        "500":
+          description: Verification service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyClientSignatureResponse"
+              examples:
+                verifierMissing:
+                  value:
+                    valid: false
+                    error: signature verifier is not configured
+  /api/v1/documents:
+    post:
+      tags: [Documents]
+      summary: Upload and sign a document
+      description: |
+        Uploads a DOCX document, injects metadata, signs it with the server
+        private key, and stores the signed document.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, owner_email, recipient_email]
+              properties:
+                owner_email:
+                  type: string
+                  format: email
+                recipient_email:
+                  type: string
+                  format: email
+                file:
+                  type: string
+                  format: binary
+                  description: |
+                    DOCX file. Maximum size is 10 MiB. Supported MIME types:
+                    `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+                    and `application/octet-stream`.
+      responses:
+        "201":
+          description: Document uploaded and signed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadDocumentSuccessEnvelope"
+        "400":
+          description: Invalid upload input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                fileRequired:
+                  value:
+                    success: false
+                    error:
+                      code: document_file_required
+                      message: Document file is required.
+                invalidExtension:
+                  value:
+                    success: false
+                    error:
+                      code: invalid_document_type
+                      message: Document file must have .docx extension.
+                invalidMime:
+                  value:
+                    success: false
+                    error:
+                      code: invalid_document_type
+                      message: Document MIME type is not supported.
+                tooLarge:
+                  value:
+                    success: false
+                    error:
+                      code: document_too_large
+                      message: Document file exceeds the maximum allowed size.
+        "500":
+          description: Upload service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/documents/{id}/send:
+    post:
+      tags: [Documents]
+      summary: Send encrypted document package by email
+      parameters:
+        - $ref: "#/components/parameters/DocumentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendDocumentRequest"
+      responses:
+        "200":
+          description: Document package sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendDocumentSuccessEnvelope"
+        "400":
+          description: Invalid request or sending failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidBody:
+                  value:
+                    success: false
+                    error:
+                      code: invalid_request
+                      message: Request body is invalid.
+                recipientRequired:
+                  value:
+                    success: false
+                    error:
+                      code: recipient_email_required
+                      message: Recipient email is required.
+                sendFailed:
+                  value:
+                    success: false
+                    error:
+                      code: document_send_failed
+                      message: Document package could not be sent.
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notFound:
+                  value:
+                    success: false
+                    error:
+                      code: document_not_found
+                      message: Document was not found.
+        "500":
+          description: Sending service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/documents/verify-decrypt:
+    post:
+      tags: [Documents]
+      summary: Verify and decrypt encrypted package
+      description: |
+        Accepts an encrypted package either as raw JSON body or as multipart
+        file upload, decrypts the document, verifies the server signature, and
+        returns the decrypted document only if the signature is valid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EncryptedPackage"
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                package:
+                  type: string
+                  format: binary
+                  description: Encrypted package JSON file
+                file:
+                  type: string
+                  format: binary
+                  description: Alternative field name accepted by the API
+      responses:
+        "200":
+          description: Package is valid and document decrypted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyDecryptPackageSuccessEnvelope"
+        "400":
+          description: Invalid package, invalid signature, or malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidRequest:
+                  value:
+                    success: false
+                    error:
+                      code: invalid_request
+                      message: package json is required
+                invalidSignature:
+                  value:
+                    success: false
+                    error:
+                      code: invalid_signature
+                      message: Package signature is invalid.
+                invalidPackage:
+                  value:
+                    success: false
+                    error:
+                      code: invalid_package
+                      message: Encrypted package is invalid.
+                verifyFailed:
+                  value:
+                    success: false
+                    error:
+                      code: verify_decrypt_failed
+                      message: Package could not be verified.
+        "500":
+          description: Verification service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  parameters:
+    DocumentID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Document identifier
+    MessageID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Message identifier
+  schemas:
+    ErrorDetails:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code
+        message:
+          type: string
+          description: User-facing error description
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          $ref: "#/components/schemas/ErrorDetails"
+    LegacyErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    HealthData:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    HealthSuccessEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/HealthData"
+    UploadDocumentResponse:
+      type: object
+      required:
+        - document_id
+        - owner_email
+        - recipient_email
+        - original_file_name
+        - stored_path
+        - mime_type
+        - created_at
+      properties:
+        document_id:
+          type: string
+        owner_email:
+          type: string
+          format: email
+        recipient_email:
+          type: string
+          format: email
+        original_file_name:
+          type: string
+        stored_path:
+          type: string
+        mime_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    UploadDocumentSuccessEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/UploadDocumentResponse"
+    SendDocumentRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    SendDocumentResponse:
+      type: object
+      required: [document_id, package_id, recipient_email, send_status]
+      properties:
+        document_id:
+          type: string
+        package_id:
+          type: string
+          description: Usually derived from `<document_id>_encrypted_package`
+        recipient_email:
+          type: string
+          format: email
+        send_status:
+          type: string
+          enum: [sent, failed]
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
+    SendDocumentSuccessEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/SendDocumentResponse"
+    VerifyDecryptPackageMetadata:
+      type: object
+      required:
+        - document_id
+        - version
+        - encryption_algorithm
+        - key_transport
+        - signature_algorithm
+        - original_file_name
+        - mime_type
+        - hash_base64
+      properties:
+        document_id:
+          type: string
+        version:
+          type: string
+          example: "1"
+        encryption_algorithm:
+          type: string
+          example: AES-256-GCM
+        key_transport:
+          type: string
+          example: plaintext_demo
+        signature_algorithm:
+          type: string
+          example: ECDSA-SHA256
+        original_file_name:
+          type: string
+        mime_type:
+          type: string
+        hash_base64:
+          $ref: "#/components/schemas/Base64String"
+    VerifyDecryptPackageResponse:
+      type: object
+      required: [valid, metadata, decrypted_document_base64]
+      properties:
+        valid:
+          type: boolean
+          enum: [true]
+        metadata:
+          $ref: "#/components/schemas/VerifyDecryptPackageMetadata"
+        decrypted_document_base64:
+          $ref: "#/components/schemas/Base64String"
+    VerifyDecryptPackageSuccessEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/VerifyDecryptPackageResponse"
+    VerifyClientSignatureRequest:
+      type: object
+      required: [message, signature_base64, public_key]
+      properties:
+        message:
+          type: string
+          description: Plain-text message to verify
+        signature_base64:
+          $ref: "#/components/schemas/Base64String"
+        public_key:
+          $ref: "#/components/schemas/PEMString"
+    VerifyClientSignatureResponse:
+      type: object
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
+        error:
+          type: string
+          description: Present when `valid=false`
+    ServerPublicKeyResponse:
+      type: object
+      required: [algorithm, public_key_pem]
+      properties:
+        algorithm:
+          type: string
+          example: ECDSA-SHA256
+        public_key_pem:
+          $ref: "#/components/schemas/PEMString"
+    IssueServerMessageRequest:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Optional custom message. If omitted, the server generates one.
+    IssueServerMessageResponse:
+      type: object
+      required:
+        - message_id
+        - created_at
+        - message
+        - algorithm
+        - hash_base64
+        - signature_base64
+      properties:
+        message_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+        algorithm:
+          type: string
+          example: ECDSA-SHA256
+        hash_base64:
+          $ref: "#/components/schemas/Base64String"
+        signature_base64:
+          $ref: "#/components/schemas/Base64String"
+    EncryptedPackage:
+      type: object
+      required:
+        - version
+        - document_id
+        - encryption_algorithm
+        - key_transport
+        - encrypted_key_base64
+        - nonce_base64
+        - ciphertext_base64
+        - signature_base64
+        - hash_base64
+        - signature_algorithm
+        - original_file_name
+        - mime_type
+      properties:
+        version:
+          type: string
+          example: "1"
+        document_id:
+          type: string
+        encryption_algorithm:
+          type: string
+          example: AES-256-GCM
+        key_transport:
+          type: string
+          example: plaintext_demo
+        encrypted_key_base64:
+          $ref: "#/components/schemas/Base64String"
+        nonce_base64:
+          $ref: "#/components/schemas/Base64String"
+        ciphertext_base64:
+          $ref: "#/components/schemas/Base64String"
+        signature_base64:
+          $ref: "#/components/schemas/Base64String"
+        hash_base64:
+          $ref: "#/components/schemas/Base64String"
+        signature_algorithm:
+          type: string
+          example: ECDSA-SHA256
+        original_file_name:
+          type: string
+        mime_type:
+          type: string
+    Base64String:
+      type: string
+      format: byte
+      description: |
+        Base64-encoded binary data using standard RFC 4648 Base64 encoding.
+        Examples: signatures, hashes, encrypted AES key, nonce, ciphertext, or
+        decrypted document bytes.
+      example: SGVsbG8=
+    PEMString:
+      type: string
+      description: |
+        PEM-encoded public key string including BEGIN/END markers and embedded
+        newlines. Example:
+
+        -----BEGIN PUBLIC KEY-----
+        BASE64...
+        -----END PUBLIC KEY-----
+      example: |
+        -----BEGIN PUBLIC KEY-----
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+        -----END PUBLIC KEY-----
