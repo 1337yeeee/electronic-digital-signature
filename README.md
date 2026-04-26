@@ -2,7 +2,17 @@
 
 ## Quick demo
 
-This section is a short end-to-end сценарий for lab demonstration.
+This README shows the current user-based flow of the lab:
+
+1. generate server keys
+2. register a user
+3. login and get JWT
+4. upload a document as that user
+5. verify a user signature with the registered user key
+6. request a server-signed message
+7. send document package and inspect audit
+
+## Run server
 
 ### 1. Generate server keys
 
@@ -17,16 +27,8 @@ This creates:
 
 ### 2. Prepare environment
 
-Copy example config:
-
 ```bash
 cp .env.example .env
-```
-
-Important: the Go server does not load `.env` automatically. Before running the
-server, export variables into the shell:
-
-```bash
 set -a
 source .env
 set +a
@@ -38,11 +40,11 @@ set +a
 docker compose up -d postgres mailpit
 ```
 
-Mailpit UI for email inspection:
+Mailpit UI:
 
 - `http://localhost:8025`
 
-### 4. Run server
+### 4. Run API
 
 From the `app` directory:
 
@@ -51,76 +53,200 @@ cd app
 go run ./cmd/server
 ```
 
-By default, the server listens on:
+By default:
 
-- `http://localhost:8080`
+- API: `http://localhost:8080`
 
-### 5. Check health
+### 5. Health check
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-Expected response:
+## OpenAPI
+
+Client-facing API description lives in:
+
+- `openapi.yaml`
+
+It now includes:
+
+- register/login/me
+- JWT auth header
+- document upload/send/audit
+- user signature verification
+- `401` and `403` errors
+
+## Auth header
+
+Protected endpoints require:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+If the token is missing:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "unauthorized",
+    "message": "Bearer token is required."
+  }
+}
+```
+
+If the token is invalid:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "invalid_token",
+    "message": "Access token is invalid."
+  }
+}
+```
+
+If a document belongs to another user:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "forbidden",
+    "message": "You do not have access to this document."
+  }
+}
+```
+
+## Curl scenarios
+
+All commands below assume:
+
+- server is running at `http://localhost:8080`
+- environment is already loaded from `.env`
+- commands run from repository root
+
+### Register user
+
+Generate user key pair:
+
+```bash
+mkdir -p data/user-keys
+openssl ecparam -name prime256v1 -genkey -noout -out data/user-keys/user_private.pem
+openssl ec -in data/user-keys/user_private.pem -pubout -out data/user-keys/user_public.pem
+USER_PUBLIC_KEY_PEM="$(awk '{printf "%s\\n", $0}' data/user-keys/user_public.pem)"
+```
+
+Register:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/users/register \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"email\": \"user@example.com\",
+    \"name\": \"Lab User\",
+    \"password\": \"secret-password\",
+    \"public_key_pem\": \"${USER_PUBLIC_KEY_PEM}\"
+  }"
+```
+
+Example response:
 
 ```json
 {
   "success": true,
   "data": {
-    "status": "ok"
+    "id": "user-id",
+    "email": "user@example.com",
+    "name": "Lab User",
+    "public_key_pem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+    "created_at": "2026-04-26T10:00:00Z",
+    "updated_at": "2026-04-26T10:00:00Z"
   }
 }
 ```
 
-## API specification
-
-The project includes a client-facing OpenAPI description in
-`openapi.yaml` at the repository root.
-
-You can use it to:
-
-- review all endpoints, requests, responses, and error formats;
-- inspect base64 and PEM field formats;
-- import the API into Swagger UI, Redoc, or client generators.
-
-## Environment
-
-Copy `.env.example` to `.env` and adjust values if needed.
-
-The current server uses only these variable groups:
-
-- API: `API_PORT`
-- Postgres: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `SSL_MODE`
-- Server keys: `SERVER_PRIVATE_KEY_PATH`, `SERVER_PUBLIC_KEY_PATH`, `SERVER_PRIVATE_KEY_PEM`, `SERVER_PUBLIC_KEY_PEM`
-- Storage: `DOCUMENT_STORAGE_PATH`
-- SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USER`, `SMTP_PASSWORD`
-- Docker convenience: `POSTGRES_CONTAINER_NAME`, `MAILPIT_CONTAINER_NAME`, `MAILPIT_UI_PORT`
-
-Server keys can be provided either by file path:
+### Login
 
 ```bash
-export SERVER_PRIVATE_KEY_PATH=data/keys/server_private.pem
-export SERVER_PUBLIC_KEY_PATH=data/keys/server_public.pem
+LOGIN_RESPONSE="$(
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "user@example.com",
+    "password": "secret-password"
+  }'
+)"
+echo "$LOGIN_RESPONSE"
 ```
 
-or directly as PEM values:
+Extract token:
 
 ```bash
-export SERVER_PRIVATE_KEY_PEM='-----BEGIN EC PRIVATE KEY-----
-...
------END EC PRIVATE KEY-----'
-export SERVER_PUBLIC_KEY_PEM='-----BEGIN PUBLIC KEY-----
-...
------END PUBLIC KEY-----'
+ACCESS_TOKEN="$(printf '%s' "$LOGIN_RESPONSE" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+echo "$ACCESS_TOKEN"
 ```
 
-## Curl scenarios
+### Get current user
 
-All examples below assume:
+```bash
+curl http://localhost:8080/api/v1/auth/me \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}"
+```
 
-- server is running at `http://localhost:8080`
-- current shell already loaded `.env`
-- commands are run from repository root unless noted
+### Update current user public key
+
+Generate a new public key and update it:
+
+```bash
+openssl ecparam -name prime256v1 -genkey -noout -out data/user-keys/user_private_v2.pem
+openssl ec -in data/user-keys/user_private_v2.pem -pubout -out data/user-keys/user_public_v2.pem
+USER_PUBLIC_KEY_V2_PEM="$(awk '{printf "%s\\n", $0}' data/user-keys/user_public_v2.pem)"
+
+curl -X PUT http://localhost:8080/api/v1/users/me/public-key \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -d "{
+    \"public_key_pem\": \"${USER_PUBLIC_KEY_V2_PEM}\"
+  }"
+```
+
+### Verify signature as current user
+
+Prepare message and signature with the same private key whose public part is
+registered in the account:
+
+```bash
+MESSAGE='user signed message'
+printf '%s' "$MESSAGE" > /tmp/user-message.txt
+openssl dgst -sha256 -sign data/user-keys/user_private_v2.pem -out /tmp/user-signature.bin /tmp/user-message.txt
+USER_SIGNATURE_BASE64="$(base64 < /tmp/user-signature.bin | tr -d '\n')"
+```
+
+Verify by registered user key:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/users/me/signatures/verify \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+  -d "{
+    \"message\": \"${MESSAGE}\",
+    \"signature_base64\": \"${USER_SIGNATURE_BASE64}\"
+  }"
+```
+
+Example response:
+
+```json
+{
+  "valid": true,
+  "signer_type": "user",
+  "signer_user_id": "user-id"
+}
+```
 
 ### Get server public key
 
@@ -128,38 +254,24 @@ All examples below assume:
 curl http://localhost:8080/api/v1/server/public-key
 ```
 
-Example response:
-
-```json
-{
-  "algorithm": "ECDSA-SHA256",
-  "public_key_pem": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
-}
-```
-
 ### Request server-signed message
-
-With custom message:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/server/messages \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -d '{
     "message": "lab proof message"
   }'
 ```
 
-Without custom message, server generates one:
-
-```bash
-curl -X POST http://localhost:8080/api/v1/server/messages
-```
-
 Example response:
 
 ```json
 {
-  "message_id": "00000000-0000-4000-8000-000000000001",
+  "message_id": "message-id",
+  "signer_type": "server",
+  "created_by_user_id": "user-id",
   "created_at": "2026-04-26T10:00:00Z",
   "message": "lab proof message",
   "algorithm": "ECDSA-SHA256",
@@ -168,64 +280,13 @@ Example response:
 }
 ```
 
-### Verify client signature
+### Upload document as user
 
-Generate client key pair:
-
-```bash
-mkdir -p data/client-keys
-openssl ecparam -name prime256v1 -genkey -noout -out data/client-keys/client_private.pem
-openssl ec -in data/client-keys/client_private.pem -pubout -out data/client-keys/client_public.pem
-```
-
-Prepare a message and signature:
-
-```bash
-MESSAGE='client signed message'
-printf '%s' "$MESSAGE" > /tmp/client-message.txt
-openssl dgst -sha256 -sign data/client-keys/client_private.pem -out /tmp/client-signature.bin /tmp/client-message.txt
-SIGNATURE_BASE64="$(base64 < /tmp/client-signature.bin | tr -d '\n')"
-PUBLIC_KEY_PEM="$(awk '{printf "%s\\n", $0}' data/client-keys/client_public.pem)"
-```
-
-Verify signature:
-
-```bash
-curl -X POST http://localhost:8080/api/v1/signatures/verify \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"message\": \"${MESSAGE}\",
-    \"signature_base64\": \"${SIGNATURE_BASE64}\",
-    \"public_key\": \"${PUBLIC_KEY_PEM}\"
-  }"
-```
-
-Valid response:
-
-```json
-{
-  "valid": true
-}
-```
-
-Invalid response example:
-
-```json
-{
-  "valid": false,
-  "error": "invalid signature"
-}
-```
-
-### Upload and send document
-
-The upload endpoint accepts only `.docx` files.
-
-Upload:
+The upload endpoint accepts only `.docx`.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/documents \
-  -F 'owner_email=owner@example.com' \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -F 'recipient_email=recipient@example.com' \
   -F 'file=@./contract.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ```
@@ -236,22 +297,25 @@ Example response:
 {
   "success": true,
   "data": {
-    "document_id": "00000000-0000-4000-8000-000000000001",
-    "owner_email": "owner@example.com",
+    "document_id": "document-id",
+    "owner_user_id": "user-id",
+    "signed_by_user_id": "user-id",
+    "owner_email": "user@example.com",
     "recipient_email": "recipient@example.com",
     "original_file_name": "contract.docx",
-    "stored_path": "data/uploads/00000000-0000-4000-8000-000000000001_contract.docx",
+    "stored_path": "data/uploads/document-id_contract.docx",
     "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "created_at": "2026-04-26T10:00:00Z"
   }
 }
 ```
 
-Send encrypted package by email:
+### Send document package
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/documents/00000000-0000-4000-8000-000000000001/send \
+curl -X POST http://localhost:8080/api/v1/documents/document-id/send \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -d '{
     "email": "recipient@example.com"
   }'
@@ -263,8 +327,11 @@ Example response:
 {
   "success": true,
   "data": {
-    "document_id": "00000000-0000-4000-8000-000000000001",
-    "package_id": "00000000-0000-4000-8000-000000000001_encrypted_package",
+    "document_id": "document-id",
+    "owner_user_id": "user-id",
+    "signed_by_user_id": "user-id",
+    "sent_by_user_id": "user-id",
+    "package_id": "document-id_encrypted_package",
     "recipient_email": "recipient@example.com",
     "send_status": "sent",
     "sent_at": "2026-04-26T10:01:00Z"
@@ -272,21 +339,15 @@ Example response:
 }
 ```
 
-Inspect the outgoing email and attachment in Mailpit:
+Inspect outgoing email in Mailpit:
 
-```text
-http://localhost:8025
-```
+- `http://localhost:8025`
 
-### Verify and decrypt encrypted package
-
-If you save the JSON attachment from Mailpit as `package.json`, you can verify
-and decrypt it like this:
+### Get document audit
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/documents/verify-decrypt \
-  -H 'Content-Type: application/json' \
-  --data-binary @package.json
+curl http://localhost:8080/api/v1/documents/document-id/audit \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}"
 ```
 
 Example response:
@@ -295,62 +356,80 @@ Example response:
 {
   "success": true,
   "data": {
-    "valid": true,
-    "metadata": {
-      "document_id": "00000000-0000-4000-8000-000000000001",
-      "version": "1",
-      "encryption_algorithm": "AES-256-GCM",
-      "key_transport": "plaintext_demo",
-      "signature_algorithm": "ECDSA-SHA256",
-      "original_file_name": "contract.docx",
-      "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "hash_base64": "..."
-    },
-    "decrypted_document_base64": "..."
+    "document_id": "document-id",
+    "owner_user_id": "user-id",
+    "signed_by_user_id": "user-id",
+    "sent_by_user_id": "user-id",
+    "owner_email": "user@example.com",
+    "recipient_email": "recipient@example.com",
+    "original_file_name": "contract.docx",
+    "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "send_status": "sent",
+    "created_at": "2026-04-26T10:00:00Z",
+    "signed_at": "2026-04-26T10:00:00Z",
+    "sent_at": "2026-04-26T10:01:00Z"
   }
 }
 ```
 
-Corrupted package example:
+### Verify and decrypt encrypted package
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "invalid_package",
-    "message": "Encrypted package is invalid."
-  }
-}
+If you save the JSON attachment from Mailpit as `package.json`:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/documents/verify-decrypt \
+  -H 'Content-Type: application/json' \
+  --data-binary @package.json
 ```
 
-## Encrypted document package
+This endpoint is intentionally public for the lab demo.
 
-Documents are encrypted with AES-256-GCM. The current demo format uses a
-single-use random AES key and stores that key in the package as base64 with
-`key_transport: "plaintext_demo"`.
+### Legacy generic signature verification
 
-This is only for the laboratory demo while recipient public-key encryption is
-not implemented yet. When recipient encryption is added, the AES key should be
-encrypted with the recipient public key and `key_transport` should change.
+The generic demo endpoint still exists if you want to verify a signature by
+explicitly passing a PEM public key:
 
-Package JSON fields:
+```bash
+PUBLIC_KEY_PEM="$(awk '{printf "%s\\n", $0}' data/user-keys/user_public_v2.pem)"
 
-```json
-{
-  "version": "1",
-  "document_id": "...",
-  "encryption_algorithm": "AES-256-GCM",
-  "key_transport": "plaintext_demo",
-  "encrypted_key_base64": "...",
-  "nonce_base64": "...",
-  "ciphertext_base64": "...",
-  "signature_base64": "...",
-  "hash_base64": "...",
-  "signature_algorithm": "ECDSA-SHA256",
-  "original_file_name": "document.docx",
-  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-}
+curl -X POST http://localhost:8080/api/v1/signatures/verify \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"message\": \"${MESSAGE}\",
+    \"signature_base64\": \"${USER_SIGNATURE_BASE64}\",
+    \"public_key\": \"${PUBLIC_KEY_PEM}\"
+  }"
 ```
 
-When saved locally, the encrypted package file is named
-`<document_id>_encrypted_package.json`.
+## Format notes
+
+### Base64 fields
+
+These fields use standard RFC 4648 base64:
+
+- `signature_base64`
+- `hash_base64`
+- `encrypted_key_base64`
+- `nonce_base64`
+- `ciphertext_base64`
+- `decrypted_document_base64`
+
+### PEM public key
+
+`public_key` and `public_key_pem` must be PEM-encoded ECDSA public keys, for
+example:
+
+```pem
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+-----END PUBLIC KEY-----
+```
+
+## Current access policy
+
+- `POST /api/v1/documents` requires authenticated user
+- `POST /api/v1/documents/{id}/send` requires authenticated owner
+- `GET /api/v1/documents/{id}/audit` requires authenticated owner
+- `POST /api/v1/users/me/signatures/verify` requires authenticated user
+- `POST /api/v1/server/messages` requires authenticated user
+- `POST /api/v1/documents/verify-decrypt` is public for the lab demo
