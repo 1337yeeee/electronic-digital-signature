@@ -32,6 +32,7 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.POST("/documents/verify-decrypt", handlerNotConfigured)
 		api.POST("/users/register", handlerNotConfigured)
 		api.GET("/users/:id", handlerNotConfigured)
+		api.PUT("/users/me/public-key", handlerNotConfigured)
 		api.POST("/auth/login", handlerNotConfigured)
 		api.GET("/auth/me", handlerNotConfigured)
 		return r
@@ -74,9 +75,15 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	if appContainer.UserHandler == nil {
 		api.POST("/users/register", handlerNotConfigured)
 		api.GET("/users/:id", handlerNotConfigured)
+		api.PUT("/users/me/public-key", handlerNotConfigured)
 	} else {
 		api.POST("/users/register", appContainer.UserHandler.Register)
 		api.GET("/users/:id", appContainer.UserHandler.GetByID)
+		if appContainer.AuthMiddleware == nil {
+			api.PUT("/users/me/public-key", handlerNotConfigured)
+		} else {
+			api.PUT("/users/me/public-key", appContainer.AuthMiddleware.RequireAuth(), appContainer.UserHandler.UpdateMyPublicKey)
+		}
 	}
 
 	if appContainer.AuthHandler == nil {

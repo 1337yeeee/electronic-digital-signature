@@ -167,5 +167,6 @@ func userToDTO(user *model.User) dto.UserResponse {
 		Name:         user.Name,
 		PublicKeyPEM: user.PublicKeyPEM,
 		CreatedAt:    user.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:    user.UpdatedAt.Format(time.RFC3339Nano),
 	}
 }

@@ -24,7 +24,7 @@ func AutoMigrate(db *gorm.DB) error {
 		return fmt.Errorf("postgres db is not configured")
 	}
 
-	if err := db.AutoMigrate(&model.Message{}, &model.Document{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.Message{}, &model.Document{}, &model.User{}, &model.UserKeyHistory{}); err != nil {
 		return fmt.Errorf("auto migrate postgres: %w", err)
 	}
 

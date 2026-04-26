@@ -91,6 +91,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 	)
 	registerUserUseCase := usecase.NewRegisterUserUseCase(userRepository, idGenerator)
 	getUserUseCase := usecase.NewGetUserUseCase(userRepository)
+	updateCurrentUserPublicKeyUseCase := usecase.NewUpdateCurrentUserPublicKeyUseCase(userRepository)
 	loginUseCase := usecase.NewLoginUseCase(userRepository, jwtManager)
 	currentUserUseCase := usecase.NewCurrentUserUseCase(userRepository)
 
@@ -108,7 +109,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 			getServerSignedMessageUseCase,
 		),
 		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase, sendDocumentUseCase, verifyDecryptPackageUseCase),
-		UserHandler:     handler.NewUserHandler(registerUserUseCase, getUserUseCase),
+		UserHandler:     handler.NewUserHandler(registerUserUseCase, getUserUseCase, updateCurrentUserPublicKeyUseCase),
 		AuthHandler:     handler.NewAuthHandler(loginUseCase, currentUserUseCase),
 		AuthMiddleware:  handler.NewAuthMiddleware(jwtManager, currentUserUseCase),
 	}, nil

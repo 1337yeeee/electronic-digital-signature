@@ -50,3 +50,19 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*model.
 
 	return &user, nil
 }
+
+func (r *UserRepository) Update(ctx context.Context, user *model.User) error {
+	if r.db == nil {
+		return errors.New("user repository db is not configured")
+	}
+
+	return r.db.WithContext(ctx).Save(user).Error
+}
+
+func (r *UserRepository) CreateKeyHistory(ctx context.Context, entry *model.UserKeyHistory) error {
+	if r.db == nil {
+		return errors.New("user repository db is not configured")
+	}
+
+	return r.db.WithContext(ctx).Create(entry).Error
+}

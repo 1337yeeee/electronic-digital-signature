@@ -22,15 +22,21 @@ type getUserUseCase interface {
 	Execute(ctx context.Context, id string) (*model.User, error)
 }
 
-type UserHandler struct {
-	registerUserUseCase registerUserUseCase
-	getUserUseCase      getUserUseCase
+type updateCurrentUserPublicKeyUseCase interface {
+	Execute(ctx context.Context, input usecase.UpdateCurrentUserPublicKeyInput) (*model.User, error)
 }
 
-func NewUserHandler(registerUserUseCase registerUserUseCase, getUserUseCase getUserUseCase) *UserHandler {
+type UserHandler struct {
+	registerUserUseCase               registerUserUseCase
+	getUserUseCase                    getUserUseCase
+	updateCurrentUserPublicKeyUseCase updateCurrentUserPublicKeyUseCase
+}
+
+func NewUserHandler(registerUserUseCase registerUserUseCase, getUserUseCase getUserUseCase, updateCurrentUserPublicKeyUseCase updateCurrentUserPublicKeyUseCase) *UserHandler {
 	return &UserHandler{
-		registerUserUseCase: registerUserUseCase,
-		getUserUseCase:      getUserUseCase,
+		registerUserUseCase:               registerUserUseCase,
+		getUserUseCase:                    getUserUseCase,
+		updateCurrentUserPublicKeyUseCase: updateCurrentUserPublicKeyUseCase,
 	}
 }
 
@@ -77,6 +83,7 @@ func (h *UserHandler) Register(ctx *gin.Context) {
 		Name:         user.Name,
 		PublicKeyPEM: user.PublicKeyPEM,
 		CreatedAt:    user.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:    user.UpdatedAt.Format(time.RFC3339Nano),
 	})
 }
 
@@ -106,5 +113,55 @@ func (h *UserHandler) GetByID(ctx *gin.Context) {
 		Name:         user.Name,
 		PublicKeyPEM: user.PublicKeyPEM,
 		CreatedAt:    user.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:    user.UpdatedAt.Format(time.RFC3339Nano),
+	})
+}
+
+func (h *UserHandler) UpdateMyPublicKey(ctx *gin.Context) {
+	if h.updateCurrentUserPublicKeyUseCase == nil {
+		respondError(ctx, http.StatusInternalServerError, "internal_error", "Public key update is not available right now.")
+		return
+	}
+
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		respondError(ctx, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
+		return
+	}
+
+	var request dto.UpdateMyPublicKeyRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		respondError(ctx, http.StatusBadRequest, "invalid_request", "Request body is invalid.")
+		return
+	}
+
+	user, err := h.updateCurrentUserPublicKeyUseCase.Execute(ctx.Request.Context(), usecase.UpdateCurrentUserPublicKeyInput{
+		UserID:       currentUser.ID,
+		PublicKeyPEM: request.PublicKeyPEM,
+	})
+	if err != nil {
+		logRequestError(ctx, "update-user-public-key", err)
+		switch {
+		case errors.Is(err, usecase.ErrInvalidUserPublicKey):
+			respondError(ctx, http.StatusBadRequest, "invalid_public_key", "Public key PEM is invalid.")
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			respondError(ctx, http.StatusNotFound, "user_not_found", "User was not found.")
+		case err.Error() == "public key pem is required":
+			respondError(ctx, http.StatusBadRequest, "public_key_required", "Public key PEM is required.")
+		case err.Error() == "user id is required":
+			respondError(ctx, http.StatusBadRequest, "user_id_required", "User id is required.")
+		default:
+			respondError(ctx, http.StatusBadRequest, "public_key_update_failed", "Public key could not be updated.")
+		}
+		return
+	}
+
+	respondSuccess(ctx, http.StatusOK, dto.UserResponse{
+		ID:           user.ID,
+		Email:        user.Email,
+		Name:         user.Name,
+		PublicKeyPEM: user.PublicKeyPEM,
+		CreatedAt:    user.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:    user.UpdatedAt.Format(time.RFC3339Nano),
 	})
 }

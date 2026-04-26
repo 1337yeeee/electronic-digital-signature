@@ -9,4 +9,5 @@ type User struct {
 	PasswordHash string    `gorm:"size:255;not null" json:"-"`
 	PublicKeyPEM string    `gorm:"type:text" json:"public_key_pem"`
 	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

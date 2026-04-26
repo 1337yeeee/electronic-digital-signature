@@ -230,8 +230,14 @@ func TestRegisterUserRoute(t *testing.T) {
 	if envelope.Data.PublicKeyPEM != strings.TrimSpace(string(publicKey)) {
 		t.Fatalf("expected public key pem, got %q", envelope.Data.PublicKeyPEM)
 	}
+	if envelope.Data.UpdatedAt == "" {
+		t.Fatal("expected updated_at")
+	}
 	if len(userRepository.users) != 1 {
 		t.Fatalf("expected 1 saved user, got %d", len(userRepository.users))
+	}
+	if len(userRepository.keyHistory) != 1 {
+		t.Fatalf("expected 1 key history entry, got %d", len(userRepository.keyHistory))
 	}
 	if userRepository.users[0].PasswordHash == "secret-password" || userRepository.users[0].PasswordHash == "" {
 		t.Fatal("expected password hash to be stored instead of raw password")
@@ -306,6 +312,7 @@ func TestGetUserRoute(t *testing.T) {
 				PasswordHash: "hash",
 				PublicKeyPEM: "pem",
 				CreatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
+				UpdatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
 			},
 		},
 	}
@@ -331,6 +338,72 @@ func TestGetUserRoute(t *testing.T) {
 	}
 	if envelope.Data.ID != "user-id" {
 		t.Fatalf("expected user id, got %q", envelope.Data.ID)
+	}
+	if envelope.Data.UpdatedAt == "" {
+		t.Fatal("expected updated_at")
+	}
+}
+
+func TestUpdateMyPublicKeyRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldPrivateKey, oldPublicKey := generateECDSAKeyPairPEM(t)
+	_ = oldPrivateKey
+	newPrivateKey, newPublicKey := generateECDSAKeyPairPEM(t)
+	_ = newPrivateKey
+	authSession := newTestAuthSessionWithPublicKey(t, string(oldPublicKey))
+	router := setupProtectedRouterWithUserHandler(authSession.userRepository, authSession)
+
+	response := performJSONRequestWithToken(t, router, http.MethodPut, "/api/v1/users/me/public-key", dto.UpdateMyPublicKeyRequest{
+		PublicKeyPEM: string(newPublicKey),
+	}, authSession.token)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var envelope struct {
+		Success bool             `json:"success"`
+		Data    dto.UserResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	if envelope.Data.PublicKeyPEM != strings.TrimSpace(string(newPublicKey)) {
+		t.Fatalf("expected updated public key, got %q", envelope.Data.PublicKeyPEM)
+	}
+	if envelope.Data.UpdatedAt == "" {
+		t.Fatal("expected updated_at")
+	}
+	if authSession.userRepository.users[0].PublicKeyPEM != strings.TrimSpace(string(newPublicKey)) {
+		t.Fatalf("expected saved public key to be updated, got %q", authSession.userRepository.users[0].PublicKeyPEM)
+	}
+	if len(authSession.userRepository.keyHistory) != 2 {
+		t.Fatalf("expected 2 key history entries, got %d", len(authSession.userRepository.keyHistory))
+	}
+}
+
+func TestUpdateMyPublicKeyRouteRejectsInvalidPublicKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authSession := newTestAuthSession(t)
+	router := setupProtectedRouterWithUserHandler(authSession.userRepository, authSession)
+
+	response := performJSONRequestWithToken(t, router, http.MethodPut, "/api/v1/users/me/public-key", dto.UpdateMyPublicKeyRequest{
+		PublicKeyPEM: "not-a-pem-key",
+	}, authSession.token)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "invalid_public_key" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
 	}
 }
 
@@ -1349,10 +1422,16 @@ func setupRouterWithVerifyDecryptPackageHandler(publicKey []byte) *gin.Engine {
 }
 
 func setupRouterWithUserHandler(userRepository *fakeUserRepository) *gin.Engine {
+	return setupProtectedRouterWithUserHandler(userRepository, nil)
+}
+
+func setupProtectedRouterWithUserHandler(userRepository *fakeUserRepository, authSession *testAuthSession) *gin.Engine {
 	return SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
 		UserHandler: handler.NewUserHandler(
 			usecase.NewRegisterUserUseCase(userRepository, fakeIDGenerator{id: "user-id"}),
 			usecase.NewGetUserUseCase(userRepository),
+			usecase.NewUpdateCurrentUserPublicKeyUseCase(userRepository),
 		),
 	})
 }
@@ -1386,6 +1465,7 @@ func newTestAuthSession(t *testing.T) *testAuthSession {
 		Name:         "Lab User",
 		PasswordHash: "hash",
 		CreatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
+		UpdatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
 	}
 	userRepository := &fakeUserRepository{users: []model.User{user}}
 	jwtManager := infraauth.NewJWTManager("test-jwt-secret", time.Hour)
@@ -1408,6 +1488,11 @@ func newTestAuthSessionWithPublicKey(t *testing.T, publicKeyPEM string) *testAut
 	authSession := newTestAuthSession(t)
 	authSession.user.PublicKeyPEM = strings.TrimSpace(publicKeyPEM)
 	authSession.userRepository.users[0].PublicKeyPEM = authSession.user.PublicKeyPEM
+	authSession.userRepository.keyHistory = append(authSession.userRepository.keyHistory, model.UserKeyHistory{
+		UserID:       authSession.user.ID,
+		PublicKeyPEM: authSession.user.PublicKeyPEM,
+		CreatedAt:    authSession.user.CreatedAt,
+	})
 	return authSession
 }
 
@@ -1822,7 +1907,8 @@ func (m *fakeMailer) SendEmail(_ context.Context, to []string, subject, body str
 }
 
 type fakeUserRepository struct {
-	users []model.User
+	users      []model.User
+	keyHistory []model.UserKeyHistory
 }
 
 func (r *fakeUserRepository) Create(_ context.Context, user *model.User) error {
@@ -1848,6 +1934,23 @@ func (r *fakeUserRepository) FindByEmail(_ context.Context, email string) (*mode
 	}
 
 	return nil, gorm.ErrRecordNotFound
+}
+
+func (r *fakeUserRepository) Update(_ context.Context, user *model.User) error {
+	for i := range r.users {
+		if r.users[i].ID == user.ID {
+			r.users[i] = *user
+			return nil
+		}
+	}
+
+	r.users = append(r.users, *user)
+	return nil
+}
+
+func (r *fakeUserRepository) CreateKeyHistory(_ context.Context, entry *model.UserKeyHistory) error {
+	r.keyHistory = append(r.keyHistory, *entry)
+	return nil
 }
 
 type fakeIDGenerator struct {

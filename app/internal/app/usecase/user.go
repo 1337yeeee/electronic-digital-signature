@@ -25,6 +25,8 @@ type userRepository interface {
 	Create(ctx context.Context, user *model.User) error
 	FindByID(ctx context.Context, id string) (*model.User, error)
 	FindByEmail(ctx context.Context, email string) (*model.User, error)
+	Update(ctx context.Context, user *model.User) error
+	CreateKeyHistory(ctx context.Context, entry *model.UserKeyHistory) error
 }
 
 type userIDGenerator interface {
@@ -102,10 +104,20 @@ func (uc *RegisterUserUseCase) Execute(ctx context.Context, input RegisterUserIn
 		PasswordHash: string(passwordHash),
 		PublicKeyPEM: publicKeyPEM,
 		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	if err := uc.repository.Create(ctx, user); err != nil {
 		return nil, fmt.Errorf("save user: %w", err)
+	}
+	if publicKeyPEM != "" {
+		if err := uc.repository.CreateKeyHistory(ctx, &model.UserKeyHistory{
+			UserID:       user.ID,
+			PublicKeyPEM: publicKeyPEM,
+			CreatedAt:    now,
+		}); err != nil {
+			return nil, fmt.Errorf("save user key history: %w", err)
+		}
 	}
 
 	return user, nil
@@ -145,4 +157,59 @@ func validateUserPublicKeyPEM(publicKeyPEM string) error {
 	}
 
 	return nil
+}
+
+type UpdateCurrentUserPublicKeyInput struct {
+	UserID       string
+	PublicKeyPEM string
+}
+
+type UpdateCurrentUserPublicKeyUseCase struct {
+	repository userRepository
+}
+
+func NewUpdateCurrentUserPublicKeyUseCase(repository userRepository) *UpdateCurrentUserPublicKeyUseCase {
+	return &UpdateCurrentUserPublicKeyUseCase{repository: repository}
+}
+
+func (uc *UpdateCurrentUserPublicKeyUseCase) Execute(ctx context.Context, input UpdateCurrentUserPublicKeyInput) (*model.User, error) {
+	if uc.repository == nil {
+		return nil, fmt.Errorf("user repository is not configured")
+	}
+
+	userID := strings.TrimSpace(input.UserID)
+	publicKeyPEM := strings.TrimSpace(input.PublicKeyPEM)
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required")
+	}
+	if publicKeyPEM == "" {
+		return nil, fmt.Errorf("public key pem is required")
+	}
+	if err := validateUserPublicKeyPEM(publicKeyPEM); err != nil {
+		return nil, err
+	}
+
+	user, err := uc.repository.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if user.PublicKeyPEM == publicKeyPEM {
+		return user, nil
+	}
+
+	now := time.Now().UTC()
+	user.PublicKeyPEM = publicKeyPEM
+	user.UpdatedAt = now
+	if err := uc.repository.Update(ctx, user); err != nil {
+		return nil, fmt.Errorf("update user public key: %w", err)
+	}
+	if err := uc.repository.CreateKeyHistory(ctx, &model.UserKeyHistory{
+		UserID:       user.ID,
+		PublicKeyPEM: publicKeyPEM,
+		CreatedAt:    now,
+	}); err != nil {
+		return nil, fmt.Errorf("save user key history: %w", err)
+	}
+
+	return user, nil
 }
