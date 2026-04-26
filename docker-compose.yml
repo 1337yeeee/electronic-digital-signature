@@ -1,27 +1,27 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: eds_lab_postgres
+    container_name: ${POSTGRES_CONTAINER_NAME:-eds_lab_postgres}
     environment:
-      POSTGRES_DB: $DB_NAME
-      POSTGRES_USER: $DB_USER
-      POSTGRES_PASSWORD: $DB_PASSWORD
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:${DB_PORT}"
+      - "${DB_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d eds_lab"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   mailpit:
     image: axllent/mailpit:v1.21
-    container_name: eds_lab_mailpit
+    container_name: ${MAILPIT_CONTAINER_NAME:-eds_lab_mailpit}
     ports:
-      - "1025:${SMTP_PORT}"
-      - "8025:8025"
+      - "${SMTP_PORT}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
 
 volumes:
   postgres_data:

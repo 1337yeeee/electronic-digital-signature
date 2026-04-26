@@ -15,7 +15,7 @@ func TestLoadServerKeyPair(t *testing.T) {
 	writeTestFile(t, privateKeyPath, []byte("private key"))
 	writeTestFile(t, publicKeyPath, []byte("public key"))
 
-	keyPair, err := LoadServerKeyPair(privateKeyPath, publicKeyPath)
+	keyPair, err := LoadServerKeyPair(privateKeyPath, publicKeyPath, "", "")
 	if err != nil {
 		t.Fatalf("load server key pair: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestLoadServerKeyPair(t *testing.T) {
 }
 
 func TestLoadServerKeyPairRejectsEmptyPath(t *testing.T) {
-	_, err := LoadServerKeyPair("", "server_public.pem")
+	_, err := LoadServerKeyPair("", "server_public.pem", "", "")
 	if err == nil {
 		t.Fatal("expected empty private key path to fail")
 	}
@@ -39,7 +39,7 @@ func TestLoadServerKeyPairRejectsEmptyPath(t *testing.T) {
 }
 
 func TestLoadServerKeyPairRejectsMissingFile(t *testing.T) {
-	_, err := LoadServerKeyPair(filepath.Join(t.TempDir(), "missing.pem"), "server_public.pem")
+	_, err := LoadServerKeyPair(filepath.Join(t.TempDir(), "missing.pem"), "server_public.pem", "", "")
 	if err == nil {
 		t.Fatal("expected missing private key file to fail")
 	}
@@ -56,12 +56,26 @@ func TestLoadServerKeyPairRejectsEmptyFile(t *testing.T) {
 	writeTestFile(t, privateKeyPath, nil)
 	writeTestFile(t, publicKeyPath, []byte("public key"))
 
-	_, err := LoadServerKeyPair(privateKeyPath, publicKeyPath)
+	_, err := LoadServerKeyPair(privateKeyPath, publicKeyPath, "", "")
 	if err == nil {
 		t.Fatal("expected empty private key file to fail")
 	}
 	if !strings.Contains(err.Error(), "server private key file is empty") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadServerKeyPairFromRawPEM(t *testing.T) {
+	keyPair, err := LoadServerKeyPair("", "", "private key", "public key")
+	if err != nil {
+		t.Fatalf("load server key pair from raw pem: %v", err)
+	}
+
+	if string(keyPair.PrivateKey) != "private key" {
+		t.Fatalf("unexpected private key: %q", keyPair.PrivateKey)
+	}
+	if string(keyPair.PublicKey) != "public key" {
+		t.Fatalf("unexpected public key: %q", keyPair.PublicKey)
 	}
 }
 

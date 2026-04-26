@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type ServerKeyPair struct {
@@ -11,13 +12,13 @@ type ServerKeyPair struct {
 	PublicKey  []byte
 }
 
-func LoadServerKeyPair(privateKeyPath, publicKeyPath string) (ServerKeyPair, error) {
-	privateKey, err := readRequiredKeyFile("server private key", privateKeyPath)
+func LoadServerKeyPair(privateKeyPath, publicKeyPath, privateKeyPEM, publicKeyPEM string) (ServerKeyPair, error) {
+	privateKey, err := readRequiredKey("server private key", privateKeyPath, privateKeyPEM)
 	if err != nil {
 		return ServerKeyPair{}, err
 	}
 
-	publicKey, err := readRequiredKeyFile("server public key", publicKeyPath)
+	publicKey, err := readRequiredKey("server public key", publicKeyPath, publicKeyPEM)
 	if err != nil {
 		return ServerKeyPair{}, err
 	}
@@ -26,6 +27,14 @@ func LoadServerKeyPair(privateKeyPath, publicKeyPath string) (ServerKeyPair, err
 		PrivateKey: privateKey,
 		PublicKey:  publicKey,
 	}, nil
+}
+
+func readRequiredKey(name, path, raw string) ([]byte, error) {
+	if strings.TrimSpace(raw) != "" {
+		return validateRequiredKeyBytes(name, []byte(raw), "environment")
+	}
+
+	return readRequiredKeyFile(name, path)
 }
 
 func readRequiredKeyFile(name, path string) ([]byte, error) {
@@ -42,8 +51,12 @@ func readRequiredKeyFile(name, path string) ([]byte, error) {
 		return nil, fmt.Errorf("read %s file %q: %w", name, path, err)
 	}
 
-	if len(key) == 0 {
-		return nil, fmt.Errorf("%s file is empty: %s", name, path)
+	return validateRequiredKeyBytes(name, key, path)
+}
+
+func validateRequiredKeyBytes(name string, key []byte, source string) ([]byte, error) {
+	if len(strings.TrimSpace(string(key))) == 0 {
+		return nil, fmt.Errorf("%s file is empty: %s", name, source)
 	}
 
 	return key, nil

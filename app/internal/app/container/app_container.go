@@ -31,6 +31,8 @@ func New(cfg config.Config) (*AppContainer, error) {
 	serverKeys, err := keys.LoadServerKeyPair(
 		cfg.ServerKeys.PrivateKeyPath,
 		cfg.ServerKeys.PublicKeyPath,
+		cfg.ServerKeys.PrivateKeyPEM,
+		cfg.ServerKeys.PublicKeyPEM,
 	)
 	if err != nil {
 		return nil, err

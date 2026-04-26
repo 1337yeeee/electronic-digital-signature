@@ -35,8 +35,32 @@ export SERVER_PRIVATE_KEY_PATH=data/keys/server_private.pem
 export SERVER_PUBLIC_KEY_PATH=data/keys/server_public.pem
 ```
 
+Alternatively, you can provide raw PEM values directly:
+
+```bash
+export SERVER_PRIVATE_KEY_PEM='-----BEGIN EC PRIVATE KEY-----
+...
+-----END EC PRIVATE KEY-----'
+export SERVER_PUBLIC_KEY_PEM='-----BEGIN PUBLIC KEY-----
+...
+-----END PUBLIC KEY-----'
+```
+
 Keep private keys out of git. Files matching `data/keys/*.pem` are ignored by
 default.
+
+## Environment
+
+Copy `.env.example` to `.env` and adjust values if needed.
+
+The current server uses only these variable groups:
+
+- API: `API_PORT`
+- Postgres: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `SSL_MODE`
+- Server keys: `SERVER_PRIVATE_KEY_PATH`, `SERVER_PUBLIC_KEY_PATH`, `SERVER_PRIVATE_KEY_PEM`, `SERVER_PUBLIC_KEY_PEM`
+- Storage: `DOCUMENT_STORAGE_PATH`
+- SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USER`, `SMTP_PASSWORD`
+- Docker convenience: `POSTGRES_CONTAINER_NAME`, `MAILPIT_CONTAINER_NAME`, `MAILPIT_UI_PORT`
 
 ## Local Postgres
 
@@ -56,6 +80,7 @@ export DB_USER=postgres
 export DB_PASSWORD=postgres
 export DB_NAME=eds_lab
 export SSL_MODE=disable
+export DOCUMENT_STORAGE_PATH=data/uploads
 export SMTP_HOST=localhost
 export SMTP_PORT=1025
 export SMTP_FROM=server@example.com
