@@ -157,6 +157,10 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 			respondError(ctx, http.StatusNotFound, "document_not_found", "Document was not found.")
 			return
 		}
+		if errors.Is(err, usecase.ErrDocumentAccessDenied) {
+			respondError(ctx, http.StatusForbidden, "forbidden", "You do not have access to this document.")
+			return
+		}
 		if strings.Contains(err.Error(), "recipient email is required") {
 			respondError(ctx, http.StatusBadRequest, "recipient_email_required", "Recipient email is required.")
 			return

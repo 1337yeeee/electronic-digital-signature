@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,8 @@ const (
 	DocumentSendStatusSent   = "sent"
 	DocumentSendStatusFailed = "failed"
 )
+
+var ErrDocumentAccessDenied = errors.New("document access denied")
 
 type EmailAttachment struct {
 	FileName    string
@@ -117,6 +120,9 @@ func (uc *SendDocumentUseCase) Execute(ctx context.Context, input SendDocumentIn
 	document, err := uc.repository.FindByID(ctx, input.DocumentID)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(document.OwnerUserID) != "" && document.OwnerUserID != input.SentByUserID {
+		return nil, ErrDocumentAccessDenied
 	}
 
 	encryptedPackage, attachmentName, packageID, err := uc.loadOrCreateEncryptedPackage(ctx, document)

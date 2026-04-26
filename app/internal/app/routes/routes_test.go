@@ -681,6 +681,54 @@ func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestSendDocumentRouteReturnsForbiddenForForeignOwner(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authSession := newTestAuthSession(t)
+	documentRepository := &fakeDocumentRepository{
+		documents: []model.Document{
+			{
+				ID:               "document-id",
+				OwnerUserID:      "different-owner-id",
+				RecipientEmail:   "old-recipient@example.com",
+				OriginalFileName: "contract.docx",
+				EncryptedPath:    "stored/document-id_encrypted_package.json",
+			},
+		},
+	}
+	documentStorage := &fakeDocumentStorage{
+		encryptedPackageContent: []byte(`{"document_id":"document-id"}`),
+	}
+	mailer := &fakeMailer{}
+
+	router := SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
+		DocumentHandler: handler.NewDocumentHandler(
+			nil,
+			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, nil, nil, mailer),
+			nil,
+		),
+	})
+
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/documents/document-id/send", dto.SendDocumentRequest{
+		Email: "recipient@example.com",
+	}, authSession.token)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusForbidden, response.Code, response.Body.String())
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "forbidden" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
+	}
+	if len(mailer.attachments) != 0 {
+		t.Fatalf("expected no mail to be sent, got %d attachments", len(mailer.attachments))
+	}
+}
+
 func TestVerifyDecryptPackageRouteAcceptsPackageJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)

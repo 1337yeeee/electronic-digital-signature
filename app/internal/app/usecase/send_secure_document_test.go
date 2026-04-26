@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -126,6 +127,31 @@ func TestSendSecureDocumentRejectsEmptyEncryptedPackage(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected empty encrypted package to fail")
+	}
+}
+
+func TestSendDocumentUseCaseRejectsForeignDocumentAccess(t *testing.T) {
+	repository := &fakeSendDocumentRepository{
+		document: model.Document{
+			ID:          "document-id",
+			OwnerUserID: "owner-user-id",
+		},
+	}
+
+	_, err := NewSendDocumentUseCase(
+		repository,
+		&fakeSecureDocumentStorage{contentByPath: map[string][]byte{}},
+		nil,
+		nil,
+		nil,
+		&fakeMailer{},
+	).Execute(context.Background(), SendDocumentInput{
+		DocumentID:     "document-id",
+		RecipientEmail: "recipient@example.com",
+		SentByUserID:   "another-user-id",
+	})
+	if !errors.Is(err, ErrDocumentAccessDenied) {
+		t.Fatalf("expected ErrDocumentAccessDenied, got %v", err)
 	}
 }
 
