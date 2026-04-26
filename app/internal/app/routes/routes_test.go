@@ -24,12 +24,14 @@ import (
 	"electronic-digital-signature/internal/app/handler"
 	"electronic-digital-signature/internal/app/usecase"
 	"electronic-digital-signature/internal/domain/model"
+	infraauth "electronic-digital-signature/internal/infra/auth"
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/docx"
 	"electronic-digital-signature/internal/infra/encryption"
 	"electronic-digital-signature/internal/infra/keys"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -319,6 +321,162 @@ func TestGetUserRoute(t *testing.T) {
 	}
 	if envelope.Data.ID != "user-id" {
 		t.Fatalf("expected user id, got %q", envelope.Data.ID)
+	}
+}
+
+func TestLoginRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+
+	userRepository := &fakeUserRepository{
+		users: []model.User{
+			{
+				ID:           "user-id",
+				Email:        "user@example.com",
+				Name:         "Lab User",
+				PasswordHash: string(passwordHash),
+				CreatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	router, _ := setupRouterWithAuth(userRepository)
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/auth/login", dto.LoginRequest{
+		Email:    "user@example.com",
+		Password: "secret-password",
+	})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var envelope struct {
+		Success bool              `json:"success"`
+		Data    dto.LoginResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	if envelope.Data.AccessToken == "" {
+		t.Fatal("expected access token")
+	}
+	if envelope.Data.TokenType != "Bearer" {
+		t.Fatalf("expected Bearer token type, got %q", envelope.Data.TokenType)
+	}
+	if envelope.Data.User.ID != "user-id" {
+		t.Fatalf("expected user id, got %q", envelope.Data.User.ID)
+	}
+}
+
+func TestLoginRouteRejectsInvalidCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+
+	userRepository := &fakeUserRepository{
+		users: []model.User{
+			{
+				ID:           "user-id",
+				Email:        "user@example.com",
+				Name:         "Lab User",
+				PasswordHash: string(passwordHash),
+			},
+		},
+	}
+	router, _ := setupRouterWithAuth(userRepository)
+
+	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/auth/login", dto.LoginRequest{
+		Email:    "user@example.com",
+		Password: "wrong-password",
+	})
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "invalid_credentials" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
+	}
+}
+
+func TestAuthMeRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+
+	userRepository := &fakeUserRepository{
+		users: []model.User{
+			{
+				ID:           "user-id",
+				Email:        "user@example.com",
+				Name:         "Lab User",
+				PasswordHash: string(passwordHash),
+				CreatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	router, jwtManager := setupRouterWithAuth(userRepository)
+	accessToken, _, err := jwtManager.Generate("user-id", "user@example.com")
+	if err != nil {
+		t.Fatalf("generate access token: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var envelope struct {
+		Success bool             `json:"success"`
+		Data    dto.UserResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	if envelope.Data.ID != "user-id" {
+		t.Fatalf("expected user id, got %q", envelope.Data.ID)
+	}
+}
+
+func TestAuthMeRouteRejectsMissingToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router, _ := setupRouterWithAuth(&fakeUserRepository{})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, response.Code)
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "unauthorized" {
+		t.Fatalf("unexpected error code: %q", body.Error.Code)
 	}
 }
 
@@ -1032,6 +1190,19 @@ func setupRouterWithUserHandler(userRepository *fakeUserRepository) *gin.Engine 
 			usecase.NewGetUserUseCase(userRepository),
 		),
 	})
+}
+
+func setupRouterWithAuth(userRepository *fakeUserRepository) (*gin.Engine, *infraauth.JWTManager) {
+	jwtManager := infraauth.NewJWTManager("test-jwt-secret", time.Hour)
+	currentUserUseCase := usecase.NewCurrentUserUseCase(userRepository)
+
+	return SetupRouter(&container.AppContainer{
+		AuthHandler: handler.NewAuthHandler(
+			usecase.NewLoginUseCase(userRepository, jwtManager),
+			currentUserUseCase,
+		),
+		AuthMiddleware: handler.NewAuthMiddleware(jwtManager, currentUserUseCase),
+	}), jwtManager
 }
 
 func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {

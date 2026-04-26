@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 type Config struct {
@@ -18,6 +19,7 @@ type Config struct {
 	ServerKeys      ServerKeysConfig
 	DocumentStorage DocumentStorageConfig
 	SMTP            SMTPConfig
+	Auth            AuthConfig
 }
 
 type ServerKeysConfig struct {
@@ -37,6 +39,11 @@ type SMTPConfig struct {
 	User     string
 	Password string
 	From     string
+}
+
+type AuthConfig struct {
+	JWTSecret string
+	TokenTTL  time.Duration
 }
 
 func Load() (Config, error) {
@@ -68,6 +75,11 @@ func Load() (Config, error) {
 			Password: os.Getenv("SMTP_PASSWORD"),
 			From:     getEnv("SMTP_FROM", "server@example.com"),
 		},
+
+		Auth: AuthConfig{
+			JWTSecret: getEnv("AUTH_JWT_SECRET", "dev-jwt-secret"),
+			TokenTTL:  getEnvAsDuration("AUTH_TOKEN_TTL", 24*time.Hour),
+		},
 	}, nil
 }
 
@@ -91,5 +103,15 @@ func getEnv(key, def string) string {
 	if val, ok := os.LookupEnv(key); ok {
 		return val
 	}
+	return def
+}
+
+func getEnvAsDuration(key string, def time.Duration) time.Duration {
+	if val, ok := os.LookupEnv(key); ok {
+		if parsed, err := time.ParseDuration(val); err == nil {
+			return parsed
+		}
+	}
+
 	return def
 }

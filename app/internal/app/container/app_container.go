@@ -5,6 +5,7 @@ import (
 	"electronic-digital-signature/internal/app/handler"
 	"electronic-digital-signature/internal/app/usecase"
 	"electronic-digital-signature/internal/domain/repository"
+	infraauth "electronic-digital-signature/internal/infra/auth"
 	"electronic-digital-signature/internal/infra/crypto"
 	"electronic-digital-signature/internal/infra/database"
 	"electronic-digital-signature/internal/infra/docx"
@@ -26,6 +27,8 @@ type AppContainer struct {
 	SignatureHandler   *handler.SignatureHandler
 	DocumentHandler    *handler.DocumentHandler
 	UserHandler        *handler.UserHandler
+	AuthHandler        *handler.AuthHandler
+	AuthMiddleware     *handler.AuthMiddleware
 	Mailer             *mailer.SMTPMailer
 }
 
@@ -54,6 +57,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 	smtpMailer := mailer.NewSMTPMailer(cfg.SMTP)
 	documentStorage := storage.NewLocalDocumentStorage(cfg.DocumentStorage.Path)
 	signatureProvider := crypto.NewECDSASHA256Provider()
+	jwtManager := infraauth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.TokenTTL)
 	idGenerator := id.NewUUIDGenerator()
 	verifyClientSignatureUseCase := usecase.NewVerifyClientSignatureUseCase(signatureProvider)
 	issueServerSignedMessageUseCase := usecase.NewIssueServerSignedMessageUseCase(
@@ -87,6 +91,8 @@ func New(cfg config.Config) (*AppContainer, error) {
 	)
 	registerUserUseCase := usecase.NewRegisterUserUseCase(userRepository, idGenerator)
 	getUserUseCase := usecase.NewGetUserUseCase(userRepository)
+	loginUseCase := usecase.NewLoginUseCase(userRepository, jwtManager)
+	currentUserUseCase := usecase.NewCurrentUserUseCase(userRepository)
 
 	return &AppContainer{
 		ServerKeys:         serverKeys,
@@ -103,5 +109,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 		),
 		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase, sendDocumentUseCase, verifyDecryptPackageUseCase),
 		UserHandler:     handler.NewUserHandler(registerUserUseCase, getUserUseCase),
+		AuthHandler:     handler.NewAuthHandler(loginUseCase, currentUserUseCase),
+		AuthMiddleware:  handler.NewAuthMiddleware(jwtManager, currentUserUseCase),
 	}, nil
 }
