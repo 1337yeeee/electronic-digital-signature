@@ -37,6 +37,7 @@ func TestSendDocumentUseCaseSignsEncryptsAndSendsPackage(t *testing.T) {
 	).Execute(context.Background(), SendDocumentInput{
 		DocumentID:     "document-id",
 		RecipientEmail: "recipient@example.com",
+		SentByUserID:   "sender-user-id",
 	})
 	if err != nil {
 		t.Fatalf("send document: %v", err)
@@ -59,6 +60,9 @@ func TestSendDocumentUseCaseSignsEncryptsAndSendsPackage(t *testing.T) {
 	}
 	if repository.document.SendStatus != DocumentSendStatusSent {
 		t.Fatalf("expected saved send status, got %q", repository.document.SendStatus)
+	}
+	if repository.document.LastSentByUserID != "sender-user-id" {
+		t.Fatalf("expected saved last sent by user id, got %q", repository.document.LastSentByUserID)
 	}
 	if len(mailer.attachments) != 1 {
 		t.Fatalf("expected package attachment, got %d", len(mailer.attachments))

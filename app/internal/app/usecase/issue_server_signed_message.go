@@ -62,6 +62,9 @@ func (uc *IssueServerSignedMessageUseCase) Execute(ctx context.Context, message 
 	if message.SignerID == "" {
 		message.SignerID = uc.signerID
 	}
+	if message.CreatedByUserID == "" {
+		return nil, nil, fmt.Errorf("created by user id is required")
+	}
 	if message.CreatedAt.IsZero() {
 		message.CreatedAt = time.Now().UTC()
 	}

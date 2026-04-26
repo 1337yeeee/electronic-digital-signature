@@ -151,9 +151,15 @@ func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
 	if messageText == "" {
 		messageText = randomServerMessage()
 	}
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication is required"})
+		return
+	}
 
 	message := model.Message{
-		Message: messageText,
+		Message:         messageText,
+		CreatedByUserID: currentUser.ID,
 	}
 
 	signature, messageHash, err := h.issueServerSignedMessageUseCase.Execute(ctx.Request.Context(), &message)
@@ -164,6 +170,7 @@ func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, dto.IssueServerMessageResponse{
 		MessageID:       message.ID,
+		CreatedByUserID: message.CreatedByUserID,
 		CreatedAt:       message.CreatedAt.Format(time.RFC3339Nano),
 		Message:         message.Message,
 		Algorithm:       signaturecrypto.ECDSASHA256Algorithm,
@@ -199,6 +206,7 @@ func (h *SignatureHandler) GetServerMessage(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, dto.IssueServerMessageResponse{
 		MessageID:       message.ID,
+		CreatedByUserID: message.CreatedByUserID,
 		CreatedAt:       message.CreatedAt.Format(time.RFC3339Nano),
 		Message:         message.Message,
 		Algorithm:       signaturecrypto.ECDSASHA256Algorithm,

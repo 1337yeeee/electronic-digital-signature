@@ -2,6 +2,7 @@ package dto
 
 type UploadDocumentResponse struct {
 	DocumentID       string `json:"document_id"`
+	OwnerUserID      string `json:"owner_user_id"`
 	OwnerEmail       string `json:"owner_email"`
 	RecipientEmail   string `json:"recipient_email"`
 	OriginalFileName string `json:"original_file_name"`
@@ -15,11 +16,12 @@ type SendDocumentRequest struct {
 }
 
 type SendDocumentResponse struct {
-	DocumentID     string `json:"document_id"`
-	PackageID      string `json:"package_id,omitempty"`
-	RecipientEmail string `json:"recipient_email"`
-	SendStatus     string `json:"send_status"`
-	SentAt         string `json:"sent_at,omitempty"`
+	DocumentID       string `json:"document_id"`
+	PackageID        string `json:"package_id,omitempty"`
+	RecipientEmail   string `json:"recipient_email"`
+	SendStatus       string `json:"send_status"`
+	LastSentByUserID string `json:"last_sent_by_user_id,omitempty"`
+	SentAt           string `json:"sent_at,omitempty"`
 }
 
 type VerifyDecryptPackageMetadata struct {

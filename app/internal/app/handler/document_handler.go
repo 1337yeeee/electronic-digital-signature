@@ -54,6 +54,11 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 		respondError(ctx, http.StatusInternalServerError, "internal_error", "Document upload is not available right now.")
 		return
 	}
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		respondError(ctx, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
+		return
+	}
 
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
@@ -91,7 +96,8 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 	}
 
 	document, err := h.uploadDocumentUseCase.Execute(ctx.Request.Context(), usecase.UploadDocumentInput{
-		OwnerEmail:       ctx.PostForm("owner_email"),
+		OwnerUserID:      currentUser.ID,
+		OwnerEmail:       currentUser.Email,
 		RecipientEmail:   ctx.PostForm("recipient_email"),
 		OriginalFileName: fileHeader.Filename,
 		MimeType:         mimeType,
@@ -113,6 +119,7 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 
 	respondSuccess(ctx, http.StatusCreated, dto.UploadDocumentResponse{
 		DocumentID:       document.ID,
+		OwnerUserID:      document.OwnerUserID,
 		OwnerEmail:       document.OwnerEmail,
 		RecipientEmail:   document.RecipientEmail,
 		OriginalFileName: document.OriginalFileName,
@@ -127,6 +134,11 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 		respondError(ctx, http.StatusInternalServerError, "internal_error", "Document sending is not available right now.")
 		return
 	}
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		respondError(ctx, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
+		return
+	}
 
 	var request dto.SendDocumentRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
@@ -137,6 +149,7 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 	result, err := h.sendDocumentUseCase.Execute(ctx.Request.Context(), usecase.SendDocumentInput{
 		DocumentID:     ctx.Param("id"),
 		RecipientEmail: request.Email,
+		SentByUserID:   currentUser.ID,
 	})
 	if err != nil {
 		logRequestError(ctx, "send-document", err)
@@ -153,10 +166,11 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 	}
 
 	response := dto.SendDocumentResponse{
-		DocumentID:     result.DocumentID,
-		PackageID:      result.PackageID,
-		RecipientEmail: result.RecipientEmail,
-		SendStatus:     result.SendStatus,
+		DocumentID:       result.DocumentID,
+		PackageID:        result.PackageID,
+		RecipientEmail:   result.RecipientEmail,
+		SendStatus:       result.SendStatus,
+		LastSentByUserID: result.LastSentByUserID,
 	}
 	if result.SentAt != nil {
 		response.SentAt = result.SentAt.Format(time.RFC3339Nano)

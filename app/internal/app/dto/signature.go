@@ -22,6 +22,7 @@ type IssueServerMessageRequest struct {
 
 type IssueServerMessageResponse struct {
 	MessageID       string `json:"message_id"`
+	CreatedByUserID string `json:"created_by_user_id,omitempty"`
 	CreatedAt       string `json:"created_at"`
 	Message         string `json:"message"`
 	Algorithm       string `json:"algorithm"`

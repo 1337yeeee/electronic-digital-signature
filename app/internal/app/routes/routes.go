@@ -44,7 +44,11 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	} else {
 		signatureHandler := appContainer.SignatureHandler
 		api.GET("/server/public-key", signatureHandler.GetServerPublicKey)
-		api.POST("/server/messages", signatureHandler.IssueServerMessage)
+		if appContainer.AuthMiddleware == nil {
+			api.POST("/server/messages", handlerNotConfigured)
+		} else {
+			api.POST("/server/messages", appContainer.AuthMiddleware.RequireAuth(), signatureHandler.IssueServerMessage)
+		}
 		api.GET("/server/messages/:id", signatureHandler.GetServerMessage)
 		api.POST("/signatures/verify", signatureHandler.VerifyClientSignature)
 	}
@@ -54,8 +58,13 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.POST("/documents/:id/send", handlerNotConfigured)
 		api.POST("/documents/verify-decrypt", handlerNotConfigured)
 	} else {
-		api.POST("/documents", appContainer.DocumentHandler.UploadDocument)
-		api.POST("/documents/:id/send", appContainer.DocumentHandler.SendDocument)
+		if appContainer.AuthMiddleware == nil {
+			api.POST("/documents", handlerNotConfigured)
+			api.POST("/documents/:id/send", handlerNotConfigured)
+		} else {
+			api.POST("/documents", appContainer.AuthMiddleware.RequireAuth(), appContainer.DocumentHandler.UploadDocument)
+			api.POST("/documents/:id/send", appContainer.AuthMiddleware.RequireAuth(), appContainer.DocumentHandler.SendDocument)
+		}
 		api.POST("/documents/verify-decrypt", appContainer.DocumentHandler.VerifyDecryptPackage)
 	}
 

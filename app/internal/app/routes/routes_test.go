@@ -57,9 +57,10 @@ func TestHealthRoute(t *testing.T) {
 func TestUploadDocumentRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)
-	router, documentRepository, documentStorage := setupRouterWithDocumentHandler(privateKey)
+	authSession := newTestAuthSession(t)
+	router, documentRepository, documentStorage := setupProtectedRouterWithDocumentHandler(privateKey, authSession)
 
-	response := performMultipartDocumentUpload(t, router, "contract.docx")
+	response := performMultipartDocumentUploadWithToken(t, router, "contract.docx", authSession.token)
 
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, response.Code)
@@ -80,7 +81,10 @@ func TestUploadDocumentRoute(t *testing.T) {
 	if body.DocumentID != "00000000-0000-4000-8000-000000000001" {
 		t.Fatalf("expected document_id from generator, got %q", body.DocumentID)
 	}
-	if body.OwnerEmail != "owner@example.com" {
+	if body.OwnerUserID != authSession.user.ID {
+		t.Fatalf("expected owner user id %q, got %q", authSession.user.ID, body.OwnerUserID)
+	}
+	if body.OwnerEmail != authSession.user.Email {
 		t.Fatalf("expected owner email, got %q", body.OwnerEmail)
 	}
 	if body.RecipientEmail != "recipient@example.com" {
@@ -94,6 +98,9 @@ func TestUploadDocumentRoute(t *testing.T) {
 	}
 	if len(documentRepository.documents) != 1 {
 		t.Fatalf("expected 1 saved document, got %d", len(documentRepository.documents))
+	}
+	if documentRepository.documents[0].OwnerUserID != authSession.user.ID {
+		t.Fatalf("expected saved owner user id %q, got %q", authSession.user.ID, documentRepository.documents[0].OwnerUserID)
 	}
 	if len(documentRepository.documents[0].Hash) == 0 {
 		t.Fatal("expected saved document hash")
@@ -120,9 +127,10 @@ func TestUploadDocumentRoute(t *testing.T) {
 func TestUploadDocumentRouteRejectsNonDocxFile(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, _ := generateECDSAKeyPairPEM(t)
-	router, _, _ := setupRouterWithDocumentHandler(privateKey)
+	authSession := newTestAuthSession(t)
+	router, _, _ := setupProtectedRouterWithDocumentHandler(privateKey, authSession)
 
-	response := performMultipartDocumentUpload(t, router, "contract.txt")
+	response := performMultipartDocumentUploadWithToken(t, router, "contract.txt", authSession.token)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
@@ -143,9 +151,10 @@ func TestUploadDocumentRouteRejectsNonDocxFile(t *testing.T) {
 func TestUploadDocumentRouteRejectsUnsupportedMIMEType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, _ := generateECDSAKeyPairPEM(t)
-	router, _, _ := setupRouterWithDocumentHandler(privateKey)
+	authSession := newTestAuthSession(t)
+	router, _, _ := setupProtectedRouterWithDocumentHandler(privateKey, authSession)
 
-	response := performMultipartDocumentUploadWithOptions(t, router, "contract.docx", minimalDocx(t), "text/plain")
+	response := performMultipartDocumentUploadWithOptionsAndToken(t, router, "contract.docx", minimalDocx(t), "text/plain", authSession.token)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
@@ -166,10 +175,11 @@ func TestUploadDocumentRouteRejectsUnsupportedMIMEType(t *testing.T) {
 func TestUploadDocumentRouteRejectsTooLargeDocument(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, _ := generateECDSAKeyPairPEM(t)
-	router, _, _ := setupRouterWithDocumentHandler(privateKey)
+	authSession := newTestAuthSession(t)
+	router, _, _ := setupProtectedRouterWithDocumentHandler(privateKey, authSession)
 
 	tooLargeContent := bytes.Repeat([]byte("a"), usecase.MaxUploadDocumentSizeBytes+1)
-	response := performMultipartDocumentUploadWithOptions(t, router, "contract.docx", tooLargeContent, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	response := performMultipartDocumentUploadWithOptionsAndToken(t, router, "contract.docx", tooLargeContent, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", authSession.token)
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
@@ -482,10 +492,12 @@ func TestAuthMeRouteRejectsMissingToken(t *testing.T) {
 
 func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	authSession := newTestAuthSession(t)
 	documentRepository := &fakeDocumentRepository{
 		documents: []model.Document{
 			{
 				ID:               "document-id",
+				OwnerUserID:      authSession.user.ID,
 				RecipientEmail:   "old-recipient@example.com",
 				OriginalFileName: "contract.docx",
 				EncryptedPath:    "stored/document-id_encrypted_package.json",
@@ -498,6 +510,7 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 	mailer := &fakeMailer{}
 
 	router := SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
 			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, nil, nil, mailer),
@@ -505,9 +518,9 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 		),
 	})
 
-	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/documents/document-id/send", dto.SendDocumentRequest{
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/documents/document-id/send", dto.SendDocumentRequest{
 		Email: "recipient@example.com",
-	})
+	}, authSession.token)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
@@ -536,6 +549,9 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 	if body.SendStatus != usecase.DocumentSendStatusSent {
 		t.Fatalf("expected send status sent, got %q", body.SendStatus)
 	}
+	if body.LastSentByUserID != authSession.user.ID {
+		t.Fatalf("expected last_sent_by_user_id %q, got %q", authSession.user.ID, body.LastSentByUserID)
+	}
 	if body.SentAt == "" {
 		t.Fatal("expected sent_at")
 	}
@@ -560,6 +576,9 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 	if savedDocument.SendStatus != usecase.DocumentSendStatusSent {
 		t.Fatalf("expected saved status sent, got %q", savedDocument.SendStatus)
 	}
+	if savedDocument.LastSentByUserID != authSession.user.ID {
+		t.Fatalf("expected saved last_sent_by_user_id %q, got %q", authSession.user.ID, savedDocument.LastSentByUserID)
+	}
 	if savedDocument.LastSentToEmail != "recipient@example.com" {
 		t.Fatalf("expected saved sent email, got %q", savedDocument.LastSentToEmail)
 	}
@@ -570,7 +589,9 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 
 func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	authSession := newTestAuthSession(t)
 	router := SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
 			usecase.NewSendDocumentUseCase(&fakeDocumentRepository{}, &fakeDocumentStorage{}, nil, nil, nil, &fakeMailer{}),
@@ -578,9 +599,9 @@ func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 		),
 	})
 
-	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/documents/missing/send", dto.SendDocumentRequest{
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/documents/missing/send", dto.SendDocumentRequest{
 		Email: "recipient@example.com",
-	})
+	}, authSession.token)
 
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, response.Code)
@@ -955,13 +976,14 @@ func TestVerifyClientSignatureRouteRejectsEmptyPublicKey(t *testing.T) {
 func TestIssueServerMessageRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)
-	router, messageRepository := setupRouterWithSignatureHandlerAndRepository(keys.ServerKeyPair{
+	authSession := newTestAuthSession(t)
+	router, messageRepository := setupProtectedRouterWithSignatureHandlerAndRepository(keys.ServerKeyPair{
 		PrivateKey: privateKey,
 		PublicKey:  publicKey,
-	})
+	}, authSession)
 
 	requestBody := dto.IssueServerMessageRequest{Message: "server generated proof"}
-	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", requestBody)
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/server/messages", requestBody, authSession.token)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
@@ -977,6 +999,9 @@ func TestIssueServerMessageRoute(t *testing.T) {
 	if body.Message != requestBody.Message {
 		t.Fatalf("expected message %q, got %q", requestBody.Message, body.Message)
 	}
+	if body.CreatedByUserID != authSession.user.ID {
+		t.Fatalf("expected created_by_user_id %q, got %q", authSession.user.ID, body.CreatedByUserID)
+	}
 	if body.Algorithm != crypto.ECDSASHA256Algorithm {
 		t.Fatalf("expected algorithm %q, got %q", crypto.ECDSASHA256Algorithm, body.Algorithm)
 	}
@@ -988,6 +1013,9 @@ func TestIssueServerMessageRoute(t *testing.T) {
 	if messageRepository.messages[0].ID != body.MessageID {
 		t.Fatalf("expected saved message id %q, got %q", body.MessageID, messageRepository.messages[0].ID)
 	}
+	if messageRepository.messages[0].CreatedByUserID != authSession.user.ID {
+		t.Fatalf("expected saved created_by_user_id %q, got %q", authSession.user.ID, messageRepository.messages[0].CreatedByUserID)
+	}
 	if len(messageRepository.messages[0].Signature) == 0 {
 		t.Fatal("expected saved message signature")
 	}
@@ -996,14 +1024,15 @@ func TestIssueServerMessageRoute(t *testing.T) {
 func TestGetServerMessageRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)
-	router, _ := setupRouterWithSignatureHandlerAndRepository(keys.ServerKeyPair{
+	authSession := newTestAuthSession(t)
+	router, _ := setupProtectedRouterWithSignatureHandlerAndRepository(keys.ServerKeyPair{
 		PrivateKey: privateKey,
 		PublicKey:  publicKey,
-	})
+	}, authSession)
 
-	createResponse := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{
+	createResponse := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{
 		Message: "traceable server message",
-	})
+	}, authSession.token)
 	if createResponse.Code != http.StatusOK {
 		t.Fatalf("expected create status %d, got %d", http.StatusOK, createResponse.Code)
 	}
@@ -1031,6 +1060,9 @@ func TestGetServerMessageRoute(t *testing.T) {
 	if body.SignatureBase64 != created.SignatureBase64 {
 		t.Fatalf("expected signature %q, got %q", created.SignatureBase64, body.SignatureBase64)
 	}
+	if body.CreatedByUserID != authSession.user.ID {
+		t.Fatalf("expected created_by_user_id %q, got %q", authSession.user.ID, body.CreatedByUserID)
+	}
 
 	assertServerMessageSignature(t, body, publicKey)
 }
@@ -1052,12 +1084,13 @@ func TestGetServerMessageRouteReturnsNotFound(t *testing.T) {
 func TestIssueServerMessageRouteGeneratesMessageWhenRequestIsEmpty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)
-	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{
+	authSession := newTestAuthSession(t)
+	router := setupProtectedRouterWithSignatureHandler(keys.ServerKeyPair{
 		PrivateKey: privateKey,
 		PublicKey:  publicKey,
-	})
+	}, authSession)
 
-	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{})
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{}, authSession.token)
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
@@ -1074,12 +1107,14 @@ func TestIssueServerMessageRouteGeneratesMessageWhenRequestIsEmpty(t *testing.T)
 func TestIssueServerMessageRouteGeneratesMessageWhenBodyIsEmpty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	privateKey, publicKey := generateECDSAKeyPairPEM(t)
-	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{
+	authSession := newTestAuthSession(t)
+	router := setupProtectedRouterWithSignatureHandler(keys.ServerKeyPair{
 		PrivateKey: privateKey,
 		PublicKey:  publicKey,
-	})
+	}, authSession)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/server/messages", nil)
+	request.Header.Set("Authorization", "Bearer "+authSession.token)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -1098,11 +1133,12 @@ func TestIssueServerMessageRouteGeneratesMessageWhenBodyIsEmpty(t *testing.T) {
 
 func TestIssueServerMessageRouteReturnsErrorWhenPrivateKeyIsMissing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	router := setupRouterWithSignatureHandler(keys.ServerKeyPair{})
+	authSession := newTestAuthSession(t)
+	router := setupProtectedRouterWithSignatureHandler(keys.ServerKeyPair{}, authSession)
 
-	response := performJSONRequest(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/server/messages", dto.IssueServerMessageRequest{
 		Message: "server generated proof",
-	})
+	}, authSession.token)
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, response.Code)
@@ -1123,10 +1159,20 @@ func setupRouterWithSignatureHandler(serverKeys keys.ServerKeyPair) *gin.Engine 
 }
 
 func setupRouterWithSignatureHandlerAndRepository(serverKeys keys.ServerKeyPair) (*gin.Engine, *fakeMessageRepository) {
+	return setupProtectedRouterWithSignatureHandlerAndRepository(serverKeys, nil)
+}
+
+func setupProtectedRouterWithSignatureHandler(serverKeys keys.ServerKeyPair, authSession *testAuthSession) *gin.Engine {
+	router, _ := setupProtectedRouterWithSignatureHandlerAndRepository(serverKeys, authSession)
+	return router
+}
+
+func setupProtectedRouterWithSignatureHandlerAndRepository(serverKeys keys.ServerKeyPair, authSession *testAuthSession) (*gin.Engine, *fakeMessageRepository) {
 	signatureProvider := crypto.NewECDSASHA256Provider()
 	messageRepository := &fakeMessageRepository{}
 
 	router := SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
 		SignatureHandler: handler.NewSignatureHandler(
 			serverKeys,
 			usecase.NewVerifyClientSignatureUseCase(signatureProvider),
@@ -1145,11 +1191,16 @@ func setupRouterWithSignatureHandlerAndRepository(serverKeys keys.ServerKeyPair)
 }
 
 func setupRouterWithDocumentHandler(privateKey []byte) (*gin.Engine, *fakeDocumentRepository, *fakeDocumentStorage) {
+	return setupProtectedRouterWithDocumentHandler(privateKey, nil)
+}
+
+func setupProtectedRouterWithDocumentHandler(privateKey []byte, authSession *testAuthSession) (*gin.Engine, *fakeDocumentRepository, *fakeDocumentStorage) {
 	documentRepository := &fakeDocumentRepository{}
 	documentStorage := &fakeDocumentStorage{}
 	signatureProvider := crypto.NewECDSASHA256Provider()
 
 	router := SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
 		DocumentHandler: handler.NewDocumentHandler(
 			usecase.NewUploadDocumentUseCase(
 				documentRepository,
@@ -1205,6 +1256,46 @@ func setupRouterWithAuth(userRepository *fakeUserRepository) (*gin.Engine, *infr
 	}), jwtManager
 }
 
+type testAuthSession struct {
+	user           model.User
+	userRepository *fakeUserRepository
+	jwtManager     *infraauth.JWTManager
+	token          string
+}
+
+func newTestAuthSession(t *testing.T) *testAuthSession {
+	t.Helper()
+
+	user := model.User{
+		ID:           "user-id",
+		Email:        "user@example.com",
+		Name:         "Lab User",
+		PasswordHash: "hash",
+		CreatedAt:    time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
+	}
+	userRepository := &fakeUserRepository{users: []model.User{user}}
+	jwtManager := infraauth.NewJWTManager("test-jwt-secret", time.Hour)
+	token, _, err := jwtManager.Generate(user.ID, user.Email)
+	if err != nil {
+		t.Fatalf("generate test access token: %v", err)
+	}
+
+	return &testAuthSession{
+		user:           user,
+		userRepository: userRepository,
+		jwtManager:     jwtManager,
+		token:          token,
+	}
+}
+
+func newAuthMiddlewareForSession(authSession *testAuthSession) *handler.AuthMiddleware {
+	if authSession == nil {
+		return nil
+	}
+
+	return handler.NewAuthMiddleware(authSession.jwtManager, usecase.NewCurrentUserUseCase(authSession.userRepository))
+}
+
 func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -1215,6 +1306,24 @@ func performJSONRequest(t *testing.T, router *gin.Engine, method, path string, b
 
 	request := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	return response
+}
+
+func performJSONRequestWithToken(t *testing.T, router *gin.Engine, method, path string, body any, token string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
+
+	request := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -1234,7 +1343,26 @@ func performMultipartDocumentUpload(t *testing.T, router *gin.Engine, fileName s
 	)
 }
 
+func performMultipartDocumentUploadWithToken(t *testing.T, router *gin.Engine, fileName, token string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	return performMultipartDocumentUploadWithOptionsAndToken(
+		t,
+		router,
+		fileName,
+		minimalDocx(t),
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		token,
+	)
+}
+
 func performMultipartDocumentUploadWithOptions(t *testing.T, router *gin.Engine, fileName string, content []byte, contentType string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	return performMultipartDocumentUploadWithOptionsAndToken(t, router, fileName, content, contentType, "")
+}
+
+func performMultipartDocumentUploadWithOptionsAndToken(t *testing.T, router *gin.Engine, fileName string, content []byte, contentType string, token string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var requestBody bytes.Buffer
@@ -1266,6 +1394,9 @@ func performMultipartDocumentUploadWithOptions(t *testing.T, router *gin.Engine,
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/documents", &requestBody)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)

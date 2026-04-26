@@ -12,7 +12,7 @@ const (
 
 type Message struct {
 	ID                 string    `gorm:"primaryKey;size:40" json:"id"`
-	UserID             string    `gorm:"size:40" json:"user_id"`
+	CreatedByUserID    string    `gorm:"size:40;not null" json:"created_by_user_id"`
 	SignerID           string    `gorm:"size:40" json:"signer_id"`
 	Message            string    `json:"message"`
 	Hash               []byte    `gorm:"type:bytea" json:"-"`

@@ -55,14 +55,16 @@ type SendSecureDocumentInput struct {
 type SendDocumentInput struct {
 	DocumentID     string
 	RecipientEmail string
+	SentByUserID   string
 }
 
 type SendDocumentResult struct {
-	DocumentID     string
-	PackageID      string
-	RecipientEmail string
-	SendStatus     string
-	SentAt         *time.Time
+	DocumentID       string
+	PackageID        string
+	RecipientEmail   string
+	SendStatus       string
+	LastSentByUserID string
+	SentAt           *time.Time
 }
 
 type SendDocumentUseCase struct {
@@ -108,6 +110,9 @@ func (uc *SendDocumentUseCase) Execute(ctx context.Context, input SendDocumentIn
 	if strings.TrimSpace(input.RecipientEmail) == "" {
 		return nil, fmt.Errorf("recipient email is required")
 	}
+	if strings.TrimSpace(input.SentByUserID) == "" {
+		return nil, fmt.Errorf("sent by user id is required")
+	}
 
 	document, err := uc.repository.FindByID(ctx, input.DocumentID)
 	if err != nil {
@@ -130,6 +135,7 @@ func (uc *SendDocumentUseCase) Execute(ctx context.Context, input SendDocumentIn
 
 	now := time.Now().UTC()
 	document.RecipientEmail = input.RecipientEmail
+	document.LastSentByUserID = input.SentByUserID
 	document.LastSentToEmail = input.RecipientEmail
 	document.SendError = ""
 	if sendErr != nil {
@@ -149,11 +155,12 @@ func (uc *SendDocumentUseCase) Execute(ctx context.Context, input SendDocumentIn
 	}
 
 	return &SendDocumentResult{
-		DocumentID:     document.ID,
-		PackageID:      packageID,
-		RecipientEmail: input.RecipientEmail,
-		SendStatus:     document.SendStatus,
-		SentAt:         document.SentAt,
+		DocumentID:       document.ID,
+		PackageID:        packageID,
+		RecipientEmail:   input.RecipientEmail,
+		SendStatus:       document.SendStatus,
+		LastSentByUserID: document.LastSentByUserID,
+		SentAt:           document.SentAt,
 	}, nil
 }
 
