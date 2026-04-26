@@ -62,12 +62,14 @@ type SendDocumentInput struct {
 }
 
 type SendDocumentResult struct {
-	DocumentID       string
-	PackageID        string
-	RecipientEmail   string
-	SendStatus       string
-	LastSentByUserID string
-	SentAt           *time.Time
+	DocumentID     string
+	OwnerUserID    string
+	SignedByUserID string
+	PackageID      string
+	RecipientEmail string
+	SendStatus     string
+	SentByUserID   string
+	SentAt         *time.Time
 }
 
 type SendDocumentUseCase struct {
@@ -161,12 +163,14 @@ func (uc *SendDocumentUseCase) Execute(ctx context.Context, input SendDocumentIn
 	}
 
 	return &SendDocumentResult{
-		DocumentID:       document.ID,
-		PackageID:        packageID,
-		RecipientEmail:   input.RecipientEmail,
-		SendStatus:       document.SendStatus,
-		LastSentByUserID: document.LastSentByUserID,
-		SentAt:           document.SentAt,
+		DocumentID:     document.ID,
+		OwnerUserID:    document.OwnerUserID,
+		SignedByUserID: document.SignedByUserID,
+		PackageID:      packageID,
+		RecipientEmail: input.RecipientEmail,
+		SendStatus:     document.SendStatus,
+		SentByUserID:   document.LastSentByUserID,
+		SentAt:         document.SentAt,
 	}, nil
 }
 

@@ -42,6 +42,7 @@ type documentSigner interface {
 
 type UploadDocumentInput struct {
 	OwnerUserID      string
+	SignedByUserID   string
 	OwnerEmail       string
 	RecipientEmail   string
 	OriginalFileName string
@@ -101,6 +102,9 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 	if strings.TrimSpace(input.OwnerUserID) == "" {
 		return nil, fmt.Errorf("owner user id is required")
 	}
+	if strings.TrimSpace(input.SignedByUserID) == "" {
+		return nil, fmt.Errorf("signed by user id is required")
+	}
 	if !strings.EqualFold(filepath.Ext(input.OriginalFileName), ".docx") {
 		return nil, fmt.Errorf("document file must have .docx extension")
 	}
@@ -135,6 +139,7 @@ func (uc *UploadDocumentUseCase) Execute(ctx context.Context, input UploadDocume
 	document := &model.Document{
 		ID:               id,
 		OwnerUserID:      input.OwnerUserID,
+		SignedByUserID:   input.SignedByUserID,
 		OwnerEmail:       input.OwnerEmail,
 		RecipientEmail:   input.RecipientEmail,
 		OriginalFileName: input.OriginalFileName,

@@ -27,6 +27,10 @@ type sendDocumentUseCase interface {
 	Execute(ctx context.Context, input usecase.SendDocumentInput) (*usecase.SendDocumentResult, error)
 }
 
+type getDocumentAuditUseCase interface {
+	Execute(ctx context.Context, input usecase.GetDocumentAuditInput) (*model.Document, error)
+}
+
 type verifyDecryptPackageUseCase interface {
 	Execute(ctx context.Context, input usecase.VerifyDecryptPackageInput) (*usecase.VerifyDecryptPackageResult, error)
 }
@@ -34,17 +38,20 @@ type verifyDecryptPackageUseCase interface {
 type DocumentHandler struct {
 	uploadDocumentUseCase       uploadDocumentUseCase
 	sendDocumentUseCase         sendDocumentUseCase
+	getDocumentAuditUseCase     getDocumentAuditUseCase
 	verifyDecryptPackageUseCase verifyDecryptPackageUseCase
 }
 
 func NewDocumentHandler(
 	uploadDocumentUseCase uploadDocumentUseCase,
 	sendDocumentUseCase sendDocumentUseCase,
+	getDocumentAuditUseCase getDocumentAuditUseCase,
 	verifyDecryptPackageUseCase verifyDecryptPackageUseCase,
 ) *DocumentHandler {
 	return &DocumentHandler{
 		uploadDocumentUseCase:       uploadDocumentUseCase,
 		sendDocumentUseCase:         sendDocumentUseCase,
+		getDocumentAuditUseCase:     getDocumentAuditUseCase,
 		verifyDecryptPackageUseCase: verifyDecryptPackageUseCase,
 	}
 }
@@ -97,6 +104,7 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 
 	document, err := h.uploadDocumentUseCase.Execute(ctx.Request.Context(), usecase.UploadDocumentInput{
 		OwnerUserID:      currentUser.ID,
+		SignedByUserID:   currentUser.ID,
 		OwnerEmail:       currentUser.Email,
 		RecipientEmail:   ctx.PostForm("recipient_email"),
 		OriginalFileName: fileHeader.Filename,
@@ -120,6 +128,7 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 	respondSuccess(ctx, http.StatusCreated, dto.UploadDocumentResponse{
 		DocumentID:       document.ID,
 		OwnerUserID:      document.OwnerUserID,
+		SignedByUserID:   document.SignedByUserID,
 		OwnerEmail:       document.OwnerEmail,
 		RecipientEmail:   document.RecipientEmail,
 		OriginalFileName: document.OriginalFileName,
@@ -127,6 +136,7 @@ func (h *DocumentHandler) UploadDocument(ctx *gin.Context) {
 		MimeType:         document.MimeType,
 		CreatedAt:        document.CreatedAt.Format(time.RFC3339Nano),
 	})
+	logRequestInfo(ctx, "upload-document", fmt.Sprintf("document_id=%s owner_user_id=%s signed_by_user_id=%s", document.ID, document.OwnerUserID, document.SignedByUserID))
 }
 
 func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
@@ -170,17 +180,72 @@ func (h *DocumentHandler) SendDocument(ctx *gin.Context) {
 	}
 
 	response := dto.SendDocumentResponse{
-		DocumentID:       result.DocumentID,
-		PackageID:        result.PackageID,
-		RecipientEmail:   result.RecipientEmail,
-		SendStatus:       result.SendStatus,
-		LastSentByUserID: result.LastSentByUserID,
+		DocumentID:     result.DocumentID,
+		OwnerUserID:    result.OwnerUserID,
+		SignedByUserID: result.SignedByUserID,
+		PackageID:      result.PackageID,
+		RecipientEmail: result.RecipientEmail,
+		SendStatus:     result.SendStatus,
+		SentByUserID:   result.SentByUserID,
 	}
 	if result.SentAt != nil {
 		response.SentAt = result.SentAt.Format(time.RFC3339Nano)
 	}
 
 	respondSuccess(ctx, http.StatusOK, response)
+	logRequestInfo(ctx, "send-document", fmt.Sprintf("document_id=%s owner_user_id=%s signed_by_user_id=%s sent_by_user_id=%s", result.DocumentID, result.OwnerUserID, result.SignedByUserID, result.SentByUserID))
+}
+
+func (h *DocumentHandler) GetAudit(ctx *gin.Context) {
+	if h.getDocumentAuditUseCase == nil {
+		respondError(ctx, http.StatusInternalServerError, "internal_error", "Document audit is not available right now.")
+		return
+	}
+
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		respondError(ctx, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
+		return
+	}
+
+	document, err := h.getDocumentAuditUseCase.Execute(ctx.Request.Context(), usecase.GetDocumentAuditInput{
+		DocumentID: ctx.Param("id"),
+		UserID:     currentUser.ID,
+	})
+	if err != nil {
+		logRequestError(ctx, "get-document-audit", err)
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			respondError(ctx, http.StatusNotFound, "document_not_found", "Document was not found.")
+		case errors.Is(err, usecase.ErrDocumentAccessDenied):
+			respondError(ctx, http.StatusForbidden, "forbidden", "You do not have access to this document.")
+		case err.Error() == "document_id is required":
+			respondError(ctx, http.StatusBadRequest, "document_id_required", "Document id is required.")
+		default:
+			respondError(ctx, http.StatusBadRequest, "document_audit_failed", "Document audit could not be loaded.")
+		}
+		return
+	}
+
+	response := dto.DocumentAuditResponse{
+		DocumentID:       document.ID,
+		OwnerUserID:      document.OwnerUserID,
+		SignedByUserID:   document.SignedByUserID,
+		SentByUserID:     document.LastSentByUserID,
+		OwnerEmail:       document.OwnerEmail,
+		RecipientEmail:   document.RecipientEmail,
+		OriginalFileName: document.OriginalFileName,
+		MimeType:         document.MimeType,
+		SendStatus:       document.SendStatus,
+		CreatedAt:        document.CreatedAt.Format(time.RFC3339Nano),
+		SignedAt:         document.SignedAt.Format(time.RFC3339Nano),
+	}
+	if document.SentAt != nil {
+		response.SentAt = document.SentAt.Format(time.RFC3339Nano)
+	}
+
+	respondSuccess(ctx, http.StatusOK, response)
+	logRequestInfo(ctx, "get-document-audit", fmt.Sprintf("document_id=%s owner_user_id=%s signed_by_user_id=%s sent_by_user_id=%s", document.ID, document.OwnerUserID, document.SignedByUserID, document.LastSentByUserID))
 }
 
 func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {

@@ -5,6 +5,7 @@ import "time"
 type Document struct {
 	ID               string     `gorm:"primaryKey;size:40" json:"id"`
 	OwnerUserID      string     `gorm:"size:40;not null" json:"owner_user_id"`
+	SignedByUserID   string     `gorm:"size:40;not null" json:"signed_by_user_id"`
 	OwnerEmail       string     `gorm:"size:255;not null" json:"owner_email"`
 	RecipientEmail   string     `gorm:"size:255;not null" json:"recipient_email"`
 	OriginalFileName string     `gorm:"size:255;not null" json:"original_file_name"`

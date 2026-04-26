@@ -29,6 +29,7 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.POST("/users/me/signatures/verify", handlerNotConfigured)
 		api.POST("/documents", handlerNotConfigured)
 		api.POST("/documents/:id/send", handlerNotConfigured)
+		api.GET("/documents/:id/audit", handlerNotConfigured)
 		api.POST("/documents/verify-decrypt", handlerNotConfigured)
 		api.POST("/users/register", handlerNotConfigured)
 		api.GET("/users/:id", handlerNotConfigured)
@@ -60,14 +61,17 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	if appContainer.DocumentHandler == nil {
 		api.POST("/documents", handlerNotConfigured)
 		api.POST("/documents/:id/send", handlerNotConfigured)
+		api.GET("/documents/:id/audit", handlerNotConfigured)
 		api.POST("/documents/verify-decrypt", handlerNotConfigured)
 	} else {
 		if appContainer.AuthMiddleware == nil {
 			api.POST("/documents", handlerNotConfigured)
 			api.POST("/documents/:id/send", handlerNotConfigured)
+			api.GET("/documents/:id/audit", handlerNotConfigured)
 		} else {
 			api.POST("/documents", appContainer.AuthMiddleware.RequireAuth(), appContainer.DocumentHandler.UploadDocument)
 			api.POST("/documents/:id/send", appContainer.AuthMiddleware.RequireAuth(), appContainer.DocumentHandler.SendDocument)
+			api.GET("/documents/:id/audit", appContainer.AuthMiddleware.RequireAuth(), appContainer.DocumentHandler.GetAudit)
 		}
 		api.POST("/documents/verify-decrypt", appContainer.DocumentHandler.VerifyDecryptPackage)
 	}

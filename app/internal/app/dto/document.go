@@ -3,6 +3,7 @@ package dto
 type UploadDocumentResponse struct {
 	DocumentID       string `json:"document_id"`
 	OwnerUserID      string `json:"owner_user_id"`
+	SignedByUserID   string `json:"signed_by_user_id"`
 	OwnerEmail       string `json:"owner_email"`
 	RecipientEmail   string `json:"recipient_email"`
 	OriginalFileName string `json:"original_file_name"`
@@ -16,11 +17,28 @@ type SendDocumentRequest struct {
 }
 
 type SendDocumentResponse struct {
+	DocumentID     string `json:"document_id"`
+	OwnerUserID    string `json:"owner_user_id"`
+	SignedByUserID string `json:"signed_by_user_id"`
+	PackageID      string `json:"package_id,omitempty"`
+	RecipientEmail string `json:"recipient_email"`
+	SendStatus     string `json:"send_status"`
+	SentByUserID   string `json:"sent_by_user_id,omitempty"`
+	SentAt         string `json:"sent_at,omitempty"`
+}
+
+type DocumentAuditResponse struct {
 	DocumentID       string `json:"document_id"`
-	PackageID        string `json:"package_id,omitempty"`
+	OwnerUserID      string `json:"owner_user_id"`
+	SignedByUserID   string `json:"signed_by_user_id"`
+	SentByUserID     string `json:"sent_by_user_id,omitempty"`
+	OwnerEmail       string `json:"owner_email"`
 	RecipientEmail   string `json:"recipient_email"`
-	SendStatus       string `json:"send_status"`
-	LastSentByUserID string `json:"last_sent_by_user_id,omitempty"`
+	OriginalFileName string `json:"original_file_name"`
+	MimeType         string `json:"mime_type"`
+	SendStatus       string `json:"send_status,omitempty"`
+	CreatedAt        string `json:"created_at"`
+	SignedAt         string `json:"signed_at"`
 	SentAt           string `json:"sent_at,omitempty"`
 }
 
