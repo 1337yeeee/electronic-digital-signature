@@ -865,6 +865,9 @@ func TestVerifyClientSignatureRoute(t *testing.T) {
 	if !body.Valid {
 		t.Fatalf("expected valid signature, got error %q", body.Error)
 	}
+	if body.SignerType != "user" {
+		t.Fatalf("expected signer_type user, got %q", body.SignerType)
+	}
 }
 
 func TestVerifyClientSignatureRouteReturnsInvalidForModifiedMessage(t *testing.T) {
@@ -898,6 +901,111 @@ func TestVerifyClientSignatureRouteReturnsInvalidForModifiedMessage(t *testing.T
 	}
 	if body.Error == "" {
 		t.Fatal("expected verification error")
+	}
+	if body.SignerType != "user" {
+		t.Fatalf("expected signer_type user, got %q", body.SignerType)
+	}
+}
+
+func TestVerifyCurrentUserSignatureRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	provider := crypto.NewECDSASHA256Provider()
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	authSession := newTestAuthSessionWithPublicKey(t, string(publicKey))
+	message := "user signed message"
+
+	signature, err := provider.Sign([]byte(message), privateKey)
+	if err != nil {
+		t.Fatalf("sign message: %v", err)
+	}
+
+	router := setupProtectedRouterWithSignatureHandler(keys.ServerKeyPair{}, authSession)
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/users/me/signatures/verify", dto.VerifyUserSignatureRequest{
+		Message:         message,
+		SignatureBase64: base64.StdEncoding.EncodeToString(signature),
+	}, authSession.token)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !body.Valid {
+		t.Fatalf("expected valid signature, got error %q", body.Error)
+	}
+	if body.SignerType != "user" {
+		t.Fatalf("expected signer_type user, got %q", body.SignerType)
+	}
+	if body.SignerUserID != authSession.user.ID {
+		t.Fatalf("expected signer_user_id %q, got %q", authSession.user.ID, body.SignerUserID)
+	}
+}
+
+func TestVerifyCurrentUserSignatureRouteReturnsInvalidForWrongSignature(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	provider := crypto.NewECDSASHA256Provider()
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	authSession := newTestAuthSessionWithPublicKey(t, string(publicKey))
+
+	signature, err := provider.Sign([]byte("original message"), privateKey)
+	if err != nil {
+		t.Fatalf("sign message: %v", err)
+	}
+
+	router := setupProtectedRouterWithSignatureHandler(keys.ServerKeyPair{}, authSession)
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/users/me/signatures/verify", dto.VerifyUserSignatureRequest{
+		Message:         "tampered message",
+		SignatureBase64: base64.StdEncoding.EncodeToString(signature),
+	}, authSession.token)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Valid {
+		t.Fatal("expected invalid signature")
+	}
+	if body.SignerType != "user" {
+		t.Fatalf("expected signer_type user, got %q", body.SignerType)
+	}
+	if body.SignerUserID != authSession.user.ID {
+		t.Fatalf("expected signer_user_id %q, got %q", authSession.user.ID, body.SignerUserID)
+	}
+}
+
+func TestVerifyCurrentUserSignatureRouteRejectsMissingRegisteredPublicKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authSession := newTestAuthSession(t)
+	router := setupProtectedRouterWithSignatureHandler(keys.ServerKeyPair{}, authSession)
+
+	response := performJSONRequestWithToken(t, router, http.MethodPost, "/api/v1/users/me/signatures/verify", dto.VerifyUserSignatureRequest{
+		Message:         "user signed message",
+		SignatureBase64: base64.StdEncoding.EncodeToString([]byte("signature")),
+	}, authSession.token)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body dto.VerifyClientSignatureResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.SignerType != "user" {
+		t.Fatalf("expected signer_type user, got %q", body.SignerType)
+	}
+	if body.SignerUserID != authSession.user.ID {
+		t.Fatalf("expected signer_user_id %q, got %q", authSession.user.ID, body.SignerUserID)
+	}
+	if body.Error != "current user does not have a registered public key" {
+		t.Fatalf("unexpected error: %q", body.Error)
 	}
 }
 
@@ -1002,6 +1110,9 @@ func TestIssueServerMessageRoute(t *testing.T) {
 	if body.CreatedByUserID != authSession.user.ID {
 		t.Fatalf("expected created_by_user_id %q, got %q", authSession.user.ID, body.CreatedByUserID)
 	}
+	if body.SignerType != "server" {
+		t.Fatalf("expected signer_type server, got %q", body.SignerType)
+	}
 	if body.Algorithm != crypto.ECDSASHA256Algorithm {
 		t.Fatalf("expected algorithm %q, got %q", crypto.ECDSASHA256Algorithm, body.Algorithm)
 	}
@@ -1062,6 +1173,9 @@ func TestGetServerMessageRoute(t *testing.T) {
 	}
 	if body.CreatedByUserID != authSession.user.ID {
 		t.Fatalf("expected created_by_user_id %q, got %q", authSession.user.ID, body.CreatedByUserID)
+	}
+	if body.SignerType != "server" {
+		t.Fatalf("expected signer_type server, got %q", body.SignerType)
 	}
 
 	assertServerMessageSignature(t, body, publicKey)
@@ -1286,6 +1400,15 @@ func newTestAuthSession(t *testing.T) *testAuthSession {
 		jwtManager:     jwtManager,
 		token:          token,
 	}
+}
+
+func newTestAuthSessionWithPublicKey(t *testing.T, publicKeyPEM string) *testAuthSession {
+	t.Helper()
+
+	authSession := newTestAuthSession(t)
+	authSession.user.PublicKeyPEM = strings.TrimSpace(publicKeyPEM)
+	authSession.userRepository.users[0].PublicKeyPEM = authSession.user.PublicKeyPEM
+	return authSession
 }
 
 func newAuthMiddlewareForSession(authSession *testAuthSession) *handler.AuthMiddleware {

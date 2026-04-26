@@ -26,6 +26,7 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.POST("/server/messages", handlerNotConfigured)
 		api.GET("/server/messages/:id", handlerNotConfigured)
 		api.POST("/signatures/verify", handlerNotConfigured)
+		api.POST("/users/me/signatures/verify", handlerNotConfigured)
 		api.POST("/documents", handlerNotConfigured)
 		api.POST("/documents/:id/send", handlerNotConfigured)
 		api.POST("/documents/verify-decrypt", handlerNotConfigured)
@@ -46,8 +47,10 @@ func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 		api.GET("/server/public-key", signatureHandler.GetServerPublicKey)
 		if appContainer.AuthMiddleware == nil {
 			api.POST("/server/messages", handlerNotConfigured)
+			api.POST("/users/me/signatures/verify", handlerNotConfigured)
 		} else {
 			api.POST("/server/messages", appContainer.AuthMiddleware.RequireAuth(), signatureHandler.IssueServerMessage)
+			api.POST("/users/me/signatures/verify", appContainer.AuthMiddleware.RequireAuth(), signatureHandler.VerifyCurrentUserSignature)
 		}
 		api.GET("/server/messages/:id", signatureHandler.GetServerMessage)
 		api.POST("/signatures/verify", signatureHandler.VerifyClientSignature)

@@ -18,6 +18,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	signerTypeServer = "server"
+	signerTypeUser   = "user"
+)
+
 type verifyClientSignatureUseCase interface {
 	Execute(message model.Message, signature []byte, publicKey []byte) error
 }
@@ -116,14 +121,93 @@ func (h *SignatureHandler) VerifyClientSignature(ctx *gin.Context) {
 	message := model.Message{Message: request.Message}
 	if err := h.verifyClientSignatureUseCase.Execute(message, signature, []byte(request.PublicKey)); err != nil {
 		ctx.JSON(http.StatusOK, dto.VerifyClientSignatureResponse{
-			Valid: false,
-			Error: err.Error(),
+			Valid:      false,
+			SignerType: signerTypeUser,
+			Error:      err.Error(),
 		})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, dto.VerifyClientSignatureResponse{
-		Valid: true,
+		Valid:      true,
+		SignerType: signerTypeUser,
+	})
+}
+
+func (h *SignatureHandler) VerifyCurrentUserSignature(ctx *gin.Context) {
+	if h.verifyClientSignatureUseCase == nil {
+		ctx.JSON(http.StatusInternalServerError, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "signature verifier is not configured",
+		})
+		return
+	}
+
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "authentication is required",
+		})
+		return
+	}
+	if strings.TrimSpace(currentUser.PublicKeyPEM) == "" {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid:        false,
+			SignerType:   signerTypeUser,
+			SignerUserID: currentUser.ID,
+			Error:        "current user does not have a registered public key",
+		})
+		return
+	}
+
+	var request dto.VerifyUserSignatureRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "invalid request body",
+		})
+		return
+	}
+	if strings.TrimSpace(request.Message) == "" {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "message is required",
+		})
+		return
+	}
+	if strings.TrimSpace(request.SignatureBase64) == "" {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "signature_base64 is required",
+		})
+		return
+	}
+
+	signature, err := base64.StdEncoding.DecodeString(request.SignatureBase64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, dto.VerifyClientSignatureResponse{
+			Valid: false,
+			Error: "signature_base64 must be valid base64",
+		})
+		return
+	}
+
+	message := model.Message{Message: request.Message}
+	if err := h.verifyClientSignatureUseCase.Execute(message, signature, []byte(currentUser.PublicKeyPEM)); err != nil {
+		ctx.JSON(http.StatusOK, dto.VerifyClientSignatureResponse{
+			Valid:        false,
+			SignerType:   signerTypeUser,
+			SignerUserID: currentUser.ID,
+			Error:        err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dto.VerifyClientSignatureResponse{
+		Valid:        true,
+		SignerType:   signerTypeUser,
+		SignerUserID: currentUser.ID,
 	})
 }
 
@@ -170,6 +254,7 @@ func (h *SignatureHandler) IssueServerMessage(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, dto.IssueServerMessageResponse{
 		MessageID:       message.ID,
+		SignerType:      signerTypeServer,
 		CreatedByUserID: message.CreatedByUserID,
 		CreatedAt:       message.CreatedAt.Format(time.RFC3339Nano),
 		Message:         message.Message,
@@ -206,6 +291,7 @@ func (h *SignatureHandler) GetServerMessage(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, dto.IssueServerMessageResponse{
 		MessageID:       message.ID,
+		SignerType:      signerTypeServer,
 		CreatedByUserID: message.CreatedByUserID,
 		CreatedAt:       message.CreatedAt.Format(time.RFC3339Nano),
 		Message:         message.Message,
