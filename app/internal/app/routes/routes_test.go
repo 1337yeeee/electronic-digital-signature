@@ -411,6 +411,62 @@ func TestVerifyDecryptPackageRouteReturnsErrorForWrongServerPublicKey(t *testing
 	}
 }
 
+func TestVerifyDecryptPackageRouteReturnsErrorForModifiedSignature(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	packageContent := tamperedPackageSignatureContent(t, encryptedPackageContent(t, privateKey, []byte("document bytes")))
+	router := setupRouterWithVerifyDecryptPackageHandler(publicKey)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/documents/verify-decrypt", bytes.NewReader(packageContent))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, response.Code, response.Body.String())
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "invalid_signature" {
+		t.Fatalf("expected invalid_signature error code, got %q", body.Error.Code)
+	}
+	if body.Error.Message != "Package signature is invalid." {
+		t.Fatalf("unexpected error message: %q", body.Error.Message)
+	}
+}
+
+func TestVerifyDecryptPackageRouteReturnsClearErrorForCorruptedPackage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	privateKey, publicKey := generateECDSAKeyPairPEM(t)
+	packageContent := tamperedPackageCiphertextContent(t, encryptedPackageContent(t, privateKey, []byte("document bytes")))
+	router := setupRouterWithVerifyDecryptPackageHandler(publicKey)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/documents/verify-decrypt", bytes.NewReader(packageContent))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, response.Code, response.Body.String())
+	}
+
+	var body dto.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error.Code != "invalid_package" {
+		t.Fatalf("expected invalid_package error code, got %q", body.Error.Code)
+	}
+	if body.Error.Message != "Encrypted package is invalid." {
+		t.Fatalf("unexpected error message: %q", body.Error.Message)
+	}
+}
+
 func TestServerPublicKeyRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	publicKey := []byte("-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n")
@@ -931,6 +987,52 @@ func encryptedPackageContent(t *testing.T, privateKey []byte, documentContent []
 	encodedPackage, err := encryption.EncodePackage(pkg)
 	if err != nil {
 		t.Fatalf("encode package: %v", err)
+	}
+
+	return encodedPackage
+}
+
+func tamperedPackageSignatureContent(t *testing.T, packageContent []byte) []byte {
+	t.Helper()
+
+	pkg, err := encryption.DecodePackage(packageContent)
+	if err != nil {
+		t.Fatalf("decode package: %v", err)
+	}
+
+	signature, err := base64.StdEncoding.DecodeString(pkg.SignatureBase64)
+	if err != nil {
+		t.Fatalf("decode signature: %v", err)
+	}
+	signature[len(signature)-1] ^= 0xff
+	pkg.SignatureBase64 = base64.StdEncoding.EncodeToString(signature)
+
+	encodedPackage, err := encryption.EncodePackage(pkg)
+	if err != nil {
+		t.Fatalf("encode tampered package: %v", err)
+	}
+
+	return encodedPackage
+}
+
+func tamperedPackageCiphertextContent(t *testing.T, packageContent []byte) []byte {
+	t.Helper()
+
+	pkg, err := encryption.DecodePackage(packageContent)
+	if err != nil {
+		t.Fatalf("decode package: %v", err)
+	}
+
+	ciphertext, err := base64.StdEncoding.DecodeString(pkg.CiphertextBase64)
+	if err != nil {
+		t.Fatalf("decode ciphertext: %v", err)
+	}
+	ciphertext[len(ciphertext)-1] ^= 0xff
+	pkg.CiphertextBase64 = base64.StdEncoding.EncodeToString(ciphertext)
+
+	encodedPackage, err := encryption.EncodePackage(pkg)
+	if err != nil {
+		t.Fatalf("encode tampered package: %v", err)
 	}
 
 	return encodedPackage
