@@ -433,3 +433,152 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
 - `POST /api/v1/users/me/signatures/verify` requires authenticated user
 - `POST /api/v1/server/messages` requires authenticated user
 - `POST /api/v1/documents/verify-decrypt` is public for the lab demo
+
+## Happy paths
+
+There is also a ready-to-run demo kit for the three main laboratory scenarios:
+
+- `demo/HAPPY_PATHS.md`
+
+It contains:
+
+1. Scenario 1: client signed, server verified
+2. Scenario 2: server signed, client verified
+3. Scenario 3: full document flow
+
+### What the happy paths do
+
+Scenario 1 demonstrates:
+
+- prepared client key pair
+- prepared signature of a fixed message
+- verification through `POST /api/v1/signatures/verify`
+
+Scenario 2 demonstrates:
+
+- getting server public key
+- requesting server-signed message
+- verifying server signature locally with `openssl`
+
+Scenario 3 demonstrates:
+
+- uploading `.docx`
+- server-side signing
+- encrypted package creation
+- sending through Mailpit
+- downloading attachment from Mailpit
+- verifying and decrypting package through API
+
+### What is already prepared
+
+Prepared demo artifacts are stored in `demo/`:
+
+- `demo/scenario1/client_private.pem`
+- `demo/scenario1/client_public.pem`
+- `demo/scenario1/message.txt`
+- `demo/scenario1/signature.base64`
+- `demo/scenario3/contract.docx`
+
+Prepared scripts:
+
+- `demo/scenario1/verify_via_endpoint.sh`
+- `demo/scenario2/request_and_verify.sh`
+- `demo/scenario3/make_demo_docx.sh`
+- `demo/scenario3/download_latest_mailpit_attachment.sh`
+- `demo/scenario3/verify_decrypt.sh`
+
+### What must be running
+
+Before checking happy paths, you need:
+
+1. exported environment from `.env`
+2. running `postgres`
+3. running `mailpit`
+4. running API server
+
+Minimal setup:
+
+```bash
+cp .env.example .env
+set -a
+source .env
+set +a
+docker compose up -d postgres mailpit
+cd app
+go run ./cmd/server
+```
+
+After that, API should be available at:
+
+- `http://localhost:8080`
+
+Mailpit UI:
+
+- `http://localhost:8025`
+
+### How to run
+
+Open:
+
+- `demo/HAPPY_PATHS.md`
+
+That file contains:
+
+- exact curl commands
+- exact script commands
+- expected outputs
+- shared auth flow for scenarios 2 and 3
+
+Quick start:
+
+Scenario 1:
+
+```bash
+demo/scenario1/verify_via_endpoint.sh
+```
+
+Scenario 2:
+
+1. register user
+2. login and export `ACCESS_TOKEN`
+3. run:
+
+```bash
+ACCESS_TOKEN="${ACCESS_TOKEN}" demo/scenario2/request_and_verify.sh
+```
+
+Scenario 3:
+
+1. register user
+2. login and export `ACCESS_TOKEN`
+3. create or reuse demo document
+4. upload and send document
+5. download attachment from Mailpit
+6. verify and decrypt package
+
+Useful commands are already written in `demo/HAPPY_PATHS.md`.
+
+### What to expect from each scenario
+
+Scenario 1 expected result:
+
+- API returns successful signature verification for the prepared client message
+
+Scenario 2 expected result:
+
+- server returns signed message
+- local `openssl` verification prints `Verified OK`
+
+Scenario 3 expected result:
+
+- upload succeeds
+- send succeeds
+- Mailpit receives email with JSON attachment
+- `verify-decrypt` returns `success: true` and `valid: true`
+
+### Notes
+
+- Scenario 2 and 3 require authenticated user flow.
+- Scenario 3 uses Mailpit as dev mailer.
+- `POST /api/v1/documents/verify-decrypt` is intentionally public for the lab demo.
+- If you want the most up-to-date step list, use `demo/HAPPY_PATHS.md` as the primary source.
