@@ -23,5 +23,57 @@ services:
       - "${SMTP_PORT}:1025"
       - "${MAILPIT_UI_PORT:-8025}:8025"
 
+  backend:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: ${BACKEND_CONTAINER_NAME:-eds_lab_backend}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      API_PORT: 8080
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      SSL_MODE: ${SSL_MODE}
+      DOCUMENT_STORAGE_PATH: /app/data/uploads
+      SERVER_PRIVATE_KEY_PATH: /app/data/keys/server_private.pem
+      SERVER_PUBLIC_KEY_PATH: /app/data/keys/server_public.pem
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL}
+    ports:
+      - "${API_PORT}:8080"
+    volumes:
+      - ./data/keys:/app/data/keys
+      - ./data/uploads:/app/data/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api/v1}
+    container_name: ${FRONTEND_CONTAINER_NAME:-eds_lab_frontend}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+
 volumes:
   postgres_data:

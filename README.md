@@ -12,7 +12,43 @@ This README shows the current user-based flow of the lab:
 6. request a server-signed message
 7. send document package and inspect audit
 
-## Run server
+## Run with Docker Compose
+
+The whole project can now be started with one command:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+This starts:
+
+- frontend
+- backend
+- postgres
+- mailpit
+
+Default URLs:
+
+- frontend: `http://localhost:3000`
+- backend API: `http://localhost:8080`
+- Mailpit UI: `http://localhost:8025`
+
+Containerized setup details:
+
+- backend is built from `app/Dockerfile`
+- frontend is built from `frontend/Dockerfile`
+- backend waits for healthy `postgres` and `mailpit`
+- frontend waits for healthy backend
+- backend mounts:
+  - `./data/keys -> /app/data/keys`
+  - `./data/uploads -> /app/data/uploads`
+
+The frontend uses `FRONTEND_API_BASE_URL` and proxies API calls to backend
+through nginx inside the frontend container, so browser requests work without
+manual backend URL rewriting.
+
+## Run locally without Docker
 
 ### 1. Generate server keys
 
@@ -57,7 +93,15 @@ By default:
 
 - API: `http://localhost:8080`
 
-### 5. Health check
+### 5. Optional frontend container only
+
+If backend is already running and you only want the web shell from compose:
+
+```bash
+docker compose up --build frontend
+```
+
+### 6. Health check
 
 ```bash
 curl http://localhost:8080/health

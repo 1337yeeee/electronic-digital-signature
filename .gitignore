@@ -1,5 +1,7 @@
 .env
 .idea
 .DS_Store
+frontend/node_modules/
+frontend/dist/
 data/keys/*.pem
 data/uploads/

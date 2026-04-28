@@ -1,0 +1,6 @@
+.git
+.idea
+tmp
+node_modules
+coverage
+data
