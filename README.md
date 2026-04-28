@@ -30,8 +30,8 @@ This starts:
 
 Default URLs:
 
-- frontend: `http://localhost:3000`
-- backend API: `http://localhost:8080`
+- web app: `http://localhost:8080`
+- backend API (direct): `http://localhost:8081`
 - Mailpit UI: `http://localhost:8025`
 
 Containerized setup details:
@@ -44,9 +44,12 @@ Containerized setup details:
   - `./data/keys -> /app/data/keys`
   - `./data/uploads -> /app/data/uploads`
 
-The frontend uses `FRONTEND_API_BASE_URL` and proxies API calls to backend
-through nginx inside the frontend container, so browser requests work without
-manual backend URL rewriting.
+The frontend is the main browser entrypoint in compose. It proxies `/api/*`
+and `/health` to backend through nginx inside the frontend container, so:
+
+- `http://localhost:8080/login` opens the SPA login page
+- `http://localhost:8080/api/v1/...` reaches backend through the frontend proxy
+- `http://localhost:8081/...` reaches backend directly
 
 ## Run locally without Docker
 
@@ -169,7 +172,7 @@ If a document belongs to another user:
 
 All commands below assume:
 
-- server is running at `http://localhost:8080`
+- web entrypoint is running at `http://localhost:8080`
 - environment is already loaded from `.env`
 - commands run from repository root
 
