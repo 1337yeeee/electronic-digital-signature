@@ -20,6 +20,7 @@ import (
 
 type AppContainer struct {
 	ServerKeys         keys.ServerKeyPair
+	CORSAllowedOrigins []string
 	DB                 *gorm.DB
 	MessageRepository  *repository.MessageRepository
 	DocumentRepository *repository.DocumentRepository
@@ -100,6 +101,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 
 	return &AppContainer{
 		ServerKeys:         serverKeys,
+		CORSAllowedOrigins: cfg.CORS.AllowedOrigins,
 		DB:                 db,
 		MessageRepository:  messageRepository,
 		DocumentRepository: documentRepository,

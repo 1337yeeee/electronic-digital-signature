@@ -3,11 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
 type Config struct {
 	APIPort string
+	CORS    CORSConfig
 
 	DBHost     string
 	DBUser     string
@@ -46,9 +48,24 @@ type AuthConfig struct {
 	TokenTTL  time.Duration
 }
 
+type CORSConfig struct {
+	AllowedOrigins []string
+}
+
 func Load() (Config, error) {
 	return Config{
 		APIPort: getEnv("API_PORT", "8080"),
+		CORS: CORSConfig{
+			AllowedOrigins: getEnvAsCSV(
+				"CORS_ALLOWED_ORIGINS",
+				[]string{
+					"http://localhost:3000",
+					"http://127.0.0.1:3000",
+					"http://localhost:8080",
+					"http://127.0.0.1:8080",
+				},
+			),
+		},
 
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBUser:     getEnv("DB_USER", "postgres"),
@@ -110,6 +127,24 @@ func getEnvAsDuration(key string, def time.Duration) time.Duration {
 	if val, ok := os.LookupEnv(key); ok {
 		if parsed, err := time.ParseDuration(val); err == nil {
 			return parsed
+		}
+	}
+
+	return def
+}
+
+func getEnvAsCSV(key string, def []string) []string {
+	if val, ok := os.LookupEnv(key); ok {
+		parts := strings.Split(val, ",")
+		result := make([]string, 0, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+		if len(result) > 0 {
+			return result
 		}
 	}
 

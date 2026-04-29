@@ -10,6 +10,9 @@ import (
 
 func SetupRouter(appContainer *container.AppContainer) *gin.Engine {
 	r := gin.Default()
+	if appContainer != nil {
+		r.Use(corsMiddleware(appContainer.CORSAllowedOrigins))
+	}
 
 	r.GET("/health", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{
