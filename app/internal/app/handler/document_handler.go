@@ -31,6 +31,10 @@ type getDocumentAuditUseCase interface {
 	Execute(ctx context.Context, input usecase.GetDocumentAuditInput) (*model.Document, error)
 }
 
+type listUserDocumentsUseCase interface {
+	Execute(ctx context.Context, input usecase.ListUserDocumentsInput) ([]model.Document, error)
+}
+
 type verifyDecryptPackageUseCase interface {
 	Execute(ctx context.Context, input usecase.VerifyDecryptPackageInput) (*usecase.VerifyDecryptPackageResult, error)
 }
@@ -39,6 +43,7 @@ type DocumentHandler struct {
 	uploadDocumentUseCase       uploadDocumentUseCase
 	sendDocumentUseCase         sendDocumentUseCase
 	getDocumentAuditUseCase     getDocumentAuditUseCase
+	listUserDocumentsUseCase    listUserDocumentsUseCase
 	verifyDecryptPackageUseCase verifyDecryptPackageUseCase
 }
 
@@ -46,12 +51,14 @@ func NewDocumentHandler(
 	uploadDocumentUseCase uploadDocumentUseCase,
 	sendDocumentUseCase sendDocumentUseCase,
 	getDocumentAuditUseCase getDocumentAuditUseCase,
+	listUserDocumentsUseCase listUserDocumentsUseCase,
 	verifyDecryptPackageUseCase verifyDecryptPackageUseCase,
 ) *DocumentHandler {
 	return &DocumentHandler{
 		uploadDocumentUseCase:       uploadDocumentUseCase,
 		sendDocumentUseCase:         sendDocumentUseCase,
 		getDocumentAuditUseCase:     getDocumentAuditUseCase,
+		listUserDocumentsUseCase:    listUserDocumentsUseCase,
 		verifyDecryptPackageUseCase: verifyDecryptPackageUseCase,
 	}
 }
@@ -246,6 +253,42 @@ func (h *DocumentHandler) GetAudit(ctx *gin.Context) {
 
 	respondSuccess(ctx, http.StatusOK, response)
 	logRequestInfo(ctx, "get-document-audit", fmt.Sprintf("document_id=%s owner_user_id=%s signed_by_user_id=%s sent_by_user_id=%s", document.ID, document.OwnerUserID, document.SignedByUserID, document.LastSentByUserID))
+}
+
+func (h *DocumentHandler) ListMyDocuments(ctx *gin.Context) {
+	if h.listUserDocumentsUseCase == nil {
+		respondError(ctx, http.StatusInternalServerError, "internal_error", "Document list is not available right now.")
+		return
+	}
+
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		respondError(ctx, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
+		return
+	}
+
+	documents, err := h.listUserDocumentsUseCase.Execute(ctx.Request.Context(), usecase.ListUserDocumentsInput{
+		UserID: currentUser.ID,
+	})
+	if err != nil {
+		logRequestError(ctx, "list-my-documents", err)
+		respondError(ctx, http.StatusBadRequest, "document_list_failed", "Document list could not be loaded.")
+		return
+	}
+
+	response := make([]dto.UserDocumentListItemResponse, 0, len(documents))
+	for _, document := range documents {
+		response = append(response, dto.UserDocumentListItemResponse{
+			DocumentID:       document.ID,
+			OriginalFileName: document.OriginalFileName,
+			RecipientEmail:   document.RecipientEmail,
+			SendStatus:       document.SendStatus,
+			CreatedAt:        document.CreatedAt.Format(time.RFC3339Nano),
+		})
+	}
+
+	respondSuccess(ctx, http.StatusOK, response)
+	logRequestInfo(ctx, "list-my-documents", fmt.Sprintf("user_id=%s documents=%d", currentUser.ID, len(response)))
 }
 
 func (h *DocumentHandler) VerifyDecryptPackage(ctx *gin.Context) {

@@ -434,6 +434,55 @@ form button,
   background: rgba(20, 83, 45, 0.16);
 }
 
+.documents-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.document-card {
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(19, 33, 31, 0.08);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.document-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.document-card-header h4 {
+  margin: 0 0 6px;
+}
+
+.document-card-header p {
+  margin: 0;
+  color: #61706b;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.84rem;
+  word-break: break-all;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+
+.compact-details {
+  margin-top: 14px;
+}
+
 .empty-panel,
 .status-panel {
   background: var(--panel-strong);

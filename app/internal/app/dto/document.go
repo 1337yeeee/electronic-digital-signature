@@ -42,6 +42,14 @@ type DocumentAuditResponse struct {
 	SentAt           string `json:"sent_at,omitempty"`
 }
 
+type UserDocumentListItemResponse struct {
+	DocumentID       string `json:"document_id"`
+	OriginalFileName string `json:"original_file_name"`
+	RecipientEmail   string `json:"recipient_email"`
+	SendStatus       string `json:"send_status,omitempty"`
+	CreatedAt        string `json:"created_at"`
+}
+
 type VerifyDecryptPackageMetadata struct {
 	DocumentID          string `json:"document_id"`
 	Version             string `json:"version"`

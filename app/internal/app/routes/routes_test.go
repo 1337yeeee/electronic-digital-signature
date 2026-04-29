@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -596,6 +597,7 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, nil, nil, mailer),
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -684,6 +686,7 @@ func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 			usecase.NewSendDocumentUseCase(&fakeDocumentRepository{}, &fakeDocumentStorage{}, nil, nil, nil, &fakeMailer{}),
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -721,6 +724,7 @@ func TestSendDocumentRouteReturnsForbiddenForForeignOwner(t *testing.T) {
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
 			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, nil, nil, mailer),
+			nil,
 			nil,
 			nil,
 		),
@@ -776,6 +780,7 @@ func TestGetDocumentAuditRoute(t *testing.T) {
 			nil,
 			usecase.NewGetDocumentAuditUseCase(documentRepository),
 			nil,
+			nil,
 		),
 	})
 
@@ -829,6 +834,7 @@ func TestGetDocumentAuditRouteReturnsForbiddenForForeignOwner(t *testing.T) {
 			nil,
 			usecase.NewGetDocumentAuditUseCase(documentRepository),
 			nil,
+			nil,
 		),
 	})
 
@@ -839,6 +845,89 @@ func TestGetDocumentAuditRouteReturnsForbiddenForForeignOwner(t *testing.T) {
 
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusForbidden, response.Code, response.Body.String())
+	}
+}
+
+func TestListMyDocumentsRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authSession := newTestAuthSession(t)
+	now := time.Now()
+	documentRepository := &fakeDocumentRepository{
+		documents: []model.Document{
+			{
+				ID:               "older-document",
+				OwnerUserID:      authSession.user.ID,
+				SignedByUserID:   authSession.user.ID,
+				OwnerEmail:       authSession.user.Email,
+				RecipientEmail:   "older@example.com",
+				OriginalFileName: "older.docx",
+				SendStatus:       "sent",
+				CreatedAt:        now.Add(-1 * time.Hour),
+				SignedAt:         now.Add(-1 * time.Hour),
+			},
+			{
+				ID:               "newer-document",
+				OwnerUserID:      authSession.user.ID,
+				SignedByUserID:   authSession.user.ID,
+				OwnerEmail:       authSession.user.Email,
+				RecipientEmail:   "newer@example.com",
+				OriginalFileName: "newer.docx",
+				SendStatus:       "created",
+				CreatedAt:        now,
+				SignedAt:         now,
+			},
+			{
+				ID:               "foreign-document",
+				OwnerUserID:      "foreign-user-id",
+				SignedByUserID:   "foreign-user-id",
+				OwnerEmail:       "foreign@example.com",
+				RecipientEmail:   "foreign-recipient@example.com",
+				OriginalFileName: "foreign.docx",
+				SendStatus:       "failed",
+				CreatedAt:        now.Add(-2 * time.Hour),
+				SignedAt:         now.Add(-2 * time.Hour),
+			},
+		},
+	}
+
+	router := SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
+		DocumentHandler: handler.NewDocumentHandler(
+			nil,
+			nil,
+			nil,
+			usecase.NewListUserDocumentsUseCase(documentRepository),
+			nil,
+		),
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/documents/me", nil)
+	request.Header.Set("Authorization", "Bearer "+authSession.token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var envelope struct {
+		Success bool                               `json:"success"`
+		Data    []dto.UserDocumentListItemResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	if len(envelope.Data) != 2 {
+		t.Fatalf("expected 2 documents, got %d", len(envelope.Data))
+	}
+	if envelope.Data[0].DocumentID != "newer-document" {
+		t.Fatalf("expected newer document first, got %q", envelope.Data[0].DocumentID)
+	}
+	if envelope.Data[1].DocumentID != "older-document" {
+		t.Fatalf("expected older document second, got %q", envelope.Data[1].DocumentID)
 	}
 }
 
@@ -1561,6 +1650,7 @@ func setupProtectedRouterWithDocumentHandler(privateKey []byte, authSession *tes
 			nil,
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -1572,6 +1662,7 @@ func setupRouterWithVerifyDecryptPackageHandler(publicKey []byte) *gin.Engine {
 
 	return SetupRouter(&container.AppContainer{
 		DocumentHandler: handler.NewDocumentHandler(
+			nil,
 			nil,
 			nil,
 			nil,
@@ -2023,6 +2114,21 @@ func (r *fakeDocumentRepository) Update(_ context.Context, document *model.Docum
 
 	r.documents = append(r.documents, *document)
 	return nil
+}
+
+func (r *fakeDocumentRepository) ListByOwnerUserID(_ context.Context, ownerUserID string) ([]model.Document, error) {
+	documents := make([]model.Document, 0)
+	for _, document := range r.documents {
+		if document.OwnerUserID == ownerUserID {
+			documents = append(documents, document)
+		}
+	}
+
+	sort.Slice(documents, func(i, j int) bool {
+		return documents[i].CreatedAt.After(documents[j].CreatedAt)
+	})
+
+	return documents, nil
 }
 
 type fakeDocumentStorage struct {

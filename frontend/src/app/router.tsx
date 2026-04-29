@@ -4,6 +4,7 @@ import { ProtectedRoute } from "../components/ProtectedRoute";
 import { DashboardPage } from "../pages/DashboardPage";
 import { DocumentFlowPage } from "../pages/DocumentFlowPage";
 import { LoginPage } from "../pages/LoginPage";
+import { MyDocumentsPage } from "../pages/MyDocumentsPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { ProfilePage } from "../pages/ProfilePage";
 import { RegisterPage } from "../pages/RegisterPage";
@@ -20,6 +21,7 @@ export function AppRouter() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/app" element={<DashboardPage />} />
+          <Route path="/app/documents" element={<MyDocumentsPage />} />
           <Route path="/app/documents/flow" element={<DocumentFlowPage />} />
           <Route path="/app/profile" element={<ProfilePage />} />
           <Route path="/app/server-signed-message" element={<ServerSignedMessagePage />} />

@@ -45,3 +45,19 @@ func (r *DocumentRepository) Update(ctx context.Context, document *model.Documen
 
 	return r.db.WithContext(ctx).Save(document).Error
 }
+
+func (r *DocumentRepository) ListByOwnerUserID(ctx context.Context, ownerUserID string) ([]model.Document, error) {
+	if r.db == nil {
+		return nil, errors.New("document repository db is not configured")
+	}
+
+	var documents []model.Document
+	if err := r.db.WithContext(ctx).
+		Where("owner_user_id = ?", ownerUserID).
+		Order("created_at DESC").
+		Find(&documents).Error; err != nil {
+		return nil, err
+	}
+
+	return documents, nil
+}

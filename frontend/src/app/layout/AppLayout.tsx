@@ -20,6 +20,9 @@ export function AppLayout() {
           <NavLink to="/app/profile">
             Profile
           </NavLink>
+          <NavLink to="/app/documents">
+            My Documents
+          </NavLink>
           <NavLink to="/app/documents/flow">
             Document Flow
           </NavLink>

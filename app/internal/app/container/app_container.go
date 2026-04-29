@@ -85,6 +85,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 		smtpMailer,
 	)
 	getDocumentAuditUseCase := usecase.NewGetDocumentAuditUseCase(documentRepository)
+	listUserDocumentsUseCase := usecase.NewListUserDocumentsUseCase(documentRepository)
 	verifyDecryptPackageUseCase := usecase.NewVerifyDecryptPackageUseCase(
 		encryption.NewAESGCMEncryptor(),
 		signatureProvider,
@@ -109,7 +110,13 @@ func New(cfg config.Config) (*AppContainer, error) {
 			issueServerSignedMessageUseCase,
 			getServerSignedMessageUseCase,
 		),
-		DocumentHandler: handler.NewDocumentHandler(uploadDocumentUseCase, sendDocumentUseCase, getDocumentAuditUseCase, verifyDecryptPackageUseCase),
+		DocumentHandler: handler.NewDocumentHandler(
+			uploadDocumentUseCase,
+			sendDocumentUseCase,
+			getDocumentAuditUseCase,
+			listUserDocumentsUseCase,
+			verifyDecryptPackageUseCase,
+		),
 		UserHandler:     handler.NewUserHandler(registerUserUseCase, getUserUseCase, updateCurrentUserPublicKeyUseCase),
 		AuthHandler:     handler.NewAuthHandler(loginUseCase, currentUserUseCase),
 		AuthMiddleware:  handler.NewAuthMiddleware(jwtManager, currentUserUseCase),
