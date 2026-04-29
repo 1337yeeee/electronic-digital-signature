@@ -17,6 +17,9 @@ export function AppLayout() {
           <NavLink to="/app" end>
             Overview
           </NavLink>
+          <NavLink to="/app/profile">
+            Profile
+          </NavLink>
         </nav>
 
         <div className="user-chip">

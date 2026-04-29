@@ -329,6 +329,12 @@ form button,
   gap: 18px;
 }
 
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .content-hero,
 .panel {
   min-width: 0;
@@ -349,6 +355,46 @@ form button,
   border-radius: 18px;
   background: #1b2221;
   color: #dfe8e5;
+}
+
+.pem-preview {
+  min-height: 220px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.details-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.details-list div {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(19, 33, 31, 0.08);
+}
+
+.details-list dt {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6c786f;
+  margin-bottom: 6px;
+}
+
+.details-list dd {
+  margin: 0;
+  color: #19312d;
+  word-break: break-word;
+}
+
+.form-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .empty-panel,
@@ -413,6 +459,10 @@ form button,
   }
 
   .hero-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-grid {
     grid-template-columns: 1fr;
   }
 
