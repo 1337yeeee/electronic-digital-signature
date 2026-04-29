@@ -20,6 +20,9 @@ export function AppLayout() {
           <NavLink to="/app/profile">
             Profile
           </NavLink>
+          <NavLink to="/app/signatures/verify">
+            Verify Signature
+          </NavLink>
         </nav>
 
         <div className="user-chip">

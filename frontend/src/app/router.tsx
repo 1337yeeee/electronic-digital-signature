@@ -6,6 +6,7 @@ import { LoginPage } from "../pages/LoginPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { ProfilePage } from "../pages/ProfilePage";
 import { RegisterPage } from "../pages/RegisterPage";
+import { UserSignatureVerifyPage } from "../pages/UserSignatureVerifyPage";
 
 export function AppRouter() {
   return (
@@ -18,6 +19,7 @@ export function AppRouter() {
         <Route element={<AppLayout />}>
           <Route path="/app" element={<DashboardPage />} />
           <Route path="/app/profile" element={<ProfilePage />} />
+          <Route path="/app/signatures/verify" element={<UserSignatureVerifyPage />} />
         </Route>
       </Route>
 

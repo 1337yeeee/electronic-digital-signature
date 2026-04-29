@@ -335,6 +335,12 @@ form button,
   gap: 18px;
 }
 
+.scenario-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 18px;
+}
+
 .content-hero,
 .panel {
   min-width: 0;
@@ -402,6 +408,58 @@ form button,
   background: var(--panel-strong);
 }
 
+.inline-panel {
+  border-radius: 18px;
+  padding: 16px;
+  color: var(--ink-soft);
+}
+
+.steps-list {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  color: #233632;
+}
+
+.code-block {
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 18px;
+  background: #1b2221;
+  color: #dfe8e5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.result-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.result-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 96px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.result-chip.success {
+  background: rgba(20, 83, 45, 0.12);
+  color: #14532d;
+}
+
+.result-chip.danger {
+  background: rgba(160, 40, 23, 0.12);
+  color: #9a3412;
+}
+
 .status-page {
   display: grid;
   place-items: center;
@@ -463,6 +521,10 @@ form button,
   }
 
   .profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scenario-grid {
     grid-template-columns: 1fr;
   }
 
