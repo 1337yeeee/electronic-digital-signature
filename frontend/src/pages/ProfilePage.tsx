@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ApiClientError, apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { SecurityNotice } from "../components/SecurityNotice";
+import { translate } from "../locales";
+import { useLocale } from "../locales/LocaleContext";
 import type { User } from "../types/auth";
 
 type UpdatePublicKeyResponse = {
@@ -9,34 +11,18 @@ type UpdatePublicKeyResponse = {
   data: User;
 };
 
-function formatDate(value?: string): string {
-  if (!value) {
-    return "Not available";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(date);
-}
-
 function validatePublicKeyPem(value: string): string | undefined {
   const normalized = value.trim();
 
   if (!normalized) {
-    return "Public key PEM is required.";
+    return translate("validation.publicKeyRequired");
   }
 
   if (
     !normalized.includes("BEGIN PUBLIC KEY") ||
     !normalized.includes("END PUBLIC KEY")
   ) {
-    return "Public key must be a PEM-encoded public key block.";
+    return translate("validation.publicKeyInvalid");
   }
 
   return undefined;
@@ -44,6 +30,7 @@ function validatePublicKeyPem(value: string): string | undefined {
 
 export function ProfilePage() {
   const { currentUser, refreshCurrentUser } = useAuth();
+  const { t, formatDateTime } = useLocale();
   const [publicKey, setPublicKey] = useState(currentUser?.public_key_pem ?? "");
   const [pemError, setPemError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -97,7 +84,7 @@ export function ProfilePage() {
       );
 
       setPublicKey(response.data.public_key_pem ?? "");
-      setSuccessMessage("Public key updated successfully.");
+      setSuccessMessage(t("profile.updateSuccess"));
       await refreshCurrentUser();
     } catch (error) {
       if (error instanceof ApiClientError) {
@@ -121,15 +108,11 @@ export function ProfilePage() {
   return (
     <div className="dashboard-grid">
       <section className="content-hero">
-        <p className="eyebrow">Profile</p>
-        <h2>Your identity and active public key</h2>
-        <p>
-          This page shows the current user identity from the authenticated API
-          and lets you rotate the active public key without leaving the web app.
-        </p>
-        <SecurityNotice title="Security note">
-          Update only the public key you want the server to use for verification.
-          Private keys must stay outside the browser and outside this system.
+        <p className="eyebrow">{t("profile.eyebrow")}</p>
+        <h2>{t("profile.title")}</h2>
+        <p>{t("profile.copy")}</p>
+        <SecurityNotice title={t("profile.securityTitle")}>
+          {t("profile.securityCopy")}
         </SecurityNotice>
       </section>
 
@@ -137,38 +120,38 @@ export function ProfilePage() {
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Identity</h3>
-              <p>Primary user data loaded from the protected profile endpoint.</p>
+              <h3>{t("profile.identityTitle")}</h3>
+              <p>{t("profile.identityCopy")}</p>
             </div>
             <button
               className="secondary-button"
               onClick={handleRefresh}
               disabled={isRefreshing}
             >
-              {isRefreshing ? "Refreshing..." : "Refresh"}
+              {isRefreshing ? t("common.refreshing") : t("common.refresh")}
             </button>
           </div>
 
           <dl className="details-list">
             <div>
-              <dt>User ID</dt>
-              <dd>{currentUser?.id ?? "Not available"}</dd>
+              <dt>{t("profile.userId")}</dt>
+              <dd>{currentUser?.id ?? t("common.notAvailable")}</dd>
             </div>
             <div>
-              <dt>Email</dt>
-              <dd>{currentUser?.email ?? "Not available"}</dd>
+              <dt>{t("profile.email")}</dt>
+              <dd>{currentUser?.email ?? t("common.notAvailable")}</dd>
             </div>
             <div>
-              <dt>Name</dt>
-              <dd>{currentUser?.name ?? "Not available"}</dd>
+              <dt>{t("profile.name")}</dt>
+              <dd>{currentUser?.name ?? t("common.notAvailable")}</dd>
             </div>
             <div>
-              <dt>Created at</dt>
-              <dd>{formatDate(currentUser?.created_at)}</dd>
+              <dt>{t("profile.createdAt")}</dt>
+              <dd>{formatDateTime(currentUser?.created_at)}</dd>
             </div>
             <div>
-              <dt>Updated at</dt>
-              <dd>{formatDate(currentUser?.updated_at)}</dd>
+              <dt>{t("profile.updatedAt")}</dt>
+              <dd>{formatDateTime(currentUser?.updated_at)}</dd>
             </div>
           </dl>
         </article>
@@ -176,22 +159,20 @@ export function ProfilePage() {
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Current public key</h3>
-              <p>
-                The backend uses this key for current-user signature scenarios.
-              </p>
+              <h3>{t("profile.currentPublicKeyTitle")}</h3>
+              <p>{t("profile.currentPublicKeyCopy")}</p>
             </div>
           </div>
 
-          <pre className="pem-preview">{currentUser?.public_key_pem || "No public key is attached yet."}</pre>
+          <pre className="pem-preview">{currentUser?.public_key_pem || t("profile.noPublicKey")}</pre>
         </article>
       </section>
 
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Update public key</h3>
-            <p>Paste a PEM-encoded public key to replace the current active key.</p>
+            <h3>{t("profile.updateTitle")}</h3>
+            <p>{t("profile.updateCopy")}</p>
           </div>
         </div>
 
@@ -208,7 +189,7 @@ export function ProfilePage() {
 
         <form onSubmit={handleSubmit} noValidate>
           <label>
-            Public key PEM
+            {t("profile.publicKeyPem")}
             <textarea
               rows={10}
               value={publicKey}
@@ -219,19 +200,16 @@ export function ProfilePage() {
               onBlur={() => setPemError(validatePublicKeyPem(publicKey) ?? null)}
               placeholder="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
             />
-            <span className="field-hint">
-              Only a PEM-encoded public key is accepted. The server will also
-              validate that it is a supported key type.
-            </span>
+            <span className="field-hint">{t("profile.publicKeyHint")}</span>
             {pemError ? <span className="field-error">{pemError}</span> : null}
           </label>
 
           <div className="form-actions-row">
             <button type="submit" disabled={isSaving || !hasChanges}>
-              {isSaving ? "Updating key..." : "Update public key"}
+              {isSaving ? t("profile.updatingButton") : t("profile.updateButton")}
             </button>
             {!hasChanges ? (
-              <span className="field-hint">No unsaved changes.</span>
+              <span className="field-hint">{t("profile.noUnsavedChanges")}</span>
             ) : null}
           </div>
         </form>

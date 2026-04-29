@@ -1,3 +1,5 @@
+import { translate } from "../locales";
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export type ApiEnvelopeError = {
@@ -51,25 +53,25 @@ function normalizeApiError(
 
   if (status === 401) {
     return {
-      message: "Authentication is required.",
+      message: translate("api.authenticationRequired"),
       code: "unauthorized"
     };
   }
   if (status === 403) {
     return {
-      message: "You do not have permission to perform this action.",
+      message: translate("api.forbidden"),
       code: "forbidden"
     };
   }
   if (status === 404) {
     return {
-      message: "The requested resource was not found.",
+      message: translate("api.notFound"),
       code: "not_found"
     };
   }
 
   return {
-    message: `Request failed with status ${status}`
+    message: translate("api.requestFailed", { status })
   };
 }
 

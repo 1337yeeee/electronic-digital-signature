@@ -1,6 +1,8 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { ApiClientError, apiClient } from "../api/client";
 import { SecurityNotice } from "../components/SecurityNotice";
+import { translate, translateSignerType } from "../locales";
+import { useLocale } from "../locales/LocaleContext";
 import { describeApiError } from "../ui/feedback";
 import { useToast } from "../ui/ToastContext";
 
@@ -13,7 +15,7 @@ type VerifyUserSignatureResponse = {
 
 function validateMessage(value: string): string | undefined {
   if (!value.trim()) {
-    return "Message is required.";
+    return translate("validation.messageRequired");
   }
   return undefined;
 }
@@ -21,27 +23,38 @@ function validateMessage(value: string): string | undefined {
 function validateSignature(value: string): string | undefined {
   const normalized = value.trim();
   if (!normalized) {
-    return "Signature base64 is required.";
+    return translate("validation.signatureRequired");
   }
 
   try {
     atob(normalized);
   } catch {
-    return "Signature must be valid base64.";
+    return translate("validation.signatureInvalid");
   }
 
   return undefined;
 }
 
 export function UserSignatureVerifyPage() {
+  const { t } = useLocale();
   const { pushToast } = useToast();
-  const [message, setMessage] = useState("I approve the lab scenario and sign this message.");
+  const defaultMessageRef = useRef(t("scenario1.defaultMessage"));
+  const [message, setMessage] = useState(defaultMessageRef.current);
   const [signatureBase64, setSignatureBase64] = useState("");
   const [messageError, setMessageError] = useState<string | null>(null);
   const [signatureError, setSignatureError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [result, setResult] = useState<VerifyUserSignatureResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const previousValue = defaultMessageRef.current;
+    const nextValue = t("scenario1.defaultMessage");
+    if (message === previousValue) {
+      setMessage(nextValue);
+    }
+    defaultMessageRef.current = nextValue;
+  }, [message, t]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -75,23 +88,23 @@ export function UserSignatureVerifyPage() {
       setResult(response);
       if (response.valid) {
         pushToast({
-          title: "Signature verified",
-          message: "The server confirmed the signature for the current user.",
+          title: t("scenario1.toastVerifiedTitle"),
+          message: t("scenario1.toastVerifiedMessage"),
           tone: "success"
         });
       } else {
         pushToast({
-          title: "Invalid signature",
-          message: response.error || "The signature does not match the provided message.",
+          title: t("scenario1.toastInvalidTitle"),
+          message: response.error || t("scenario1.toastInvalidMessage"),
           tone: "warning"
         });
       }
     } catch (error) {
       if (error instanceof ApiClientError && error.code === "unauthorized") {
-        setRequestError("Please sign in again to verify a user signature.");
+        setRequestError(t("scenario1.requestUnauthorized"));
         pushToast({
-          title: "Authentication required",
-          message: "Please sign in again to verify a user signature.",
+          title: t("feedback.unauthorized.title"),
+          message: t("scenario1.requestUnauthorized"),
           tone: "warning"
         });
       } else {
@@ -107,16 +120,11 @@ export function UserSignatureVerifyPage() {
   return (
     <div className="dashboard-grid">
       <section className="content-hero">
-        <p className="eyebrow">Scenario 1</p>
-        <h2>User signs, server verifies</h2>
-        <p>
-          Paste the original message and a base64-encoded signature created with
-          the private key that matches your registered public key. The backend
-          will verify it and return who the signer is.
-        </p>
-        <SecurityNotice title="Security note">
-          Paste only the message and the resulting signature. Never paste your
-          private key into this application.
+        <p className="eyebrow">{t("scenario1.eyebrow")}</p>
+        <h2>{t("scenario1.title")}</h2>
+        <p>{t("scenario1.copy")}</p>
+        <SecurityNotice title={t("scenario1.securityTitle")}>
+          {t("scenario1.securityCopy")}
         </SecurityNotice>
       </section>
 
@@ -124,8 +132,8 @@ export function UserSignatureVerifyPage() {
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Verify signature</h3>
-              <p>Calls `POST /api/v1/users/me/signatures/verify`.</p>
+              <h3>{t("scenario1.verifyTitle")}</h3>
+              <p>{t("scenario1.verifyCopy")}</p>
             </div>
           </div>
 
@@ -137,7 +145,7 @@ export function UserSignatureVerifyPage() {
 
           <form onSubmit={handleSubmit} noValidate>
             <label>
-              Message
+              {t("scenario1.message")}
               <textarea
                 rows={5}
                 value={message}
@@ -146,13 +154,13 @@ export function UserSignatureVerifyPage() {
                 autoCapitalize="off"
                 spellCheck={false}
                 onBlur={() => setMessageError(validateMessage(message) ?? null)}
-                placeholder="Enter the exact message that was signed"
+                placeholder={t("scenario1.messagePlaceholder")}
               />
               {messageError ? <span className="field-error">{messageError}</span> : null}
             </label>
 
             <label>
-              Signature base64
+              {t("scenario1.signature")}
               <textarea
                 rows={7}
                 value={signatureBase64}
@@ -163,17 +171,15 @@ export function UserSignatureVerifyPage() {
                 onBlur={() =>
                   setSignatureError(validateSignature(signatureBase64) ?? null)
                 }
-                placeholder="MEUCIQ..."
+                placeholder={t("scenario1.signaturePlaceholder")}
               />
-              <span className="field-hint">
-                Paste the signature exactly as base64, without extra JSON or PEM wrappers.
-              </span>
+              <span className="field-hint">{t("scenario1.signatureHint")}</span>
               {signatureError ? <span className="field-error">{signatureError}</span> : null}
             </label>
 
             <div className="form-actions-row">
               <button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Verifying..." : "Verify signature"}
+                {isSubmitting ? t("scenario1.verifyingButton") : t("scenario1.verifyButton")}
               </button>
             </div>
           </form>
@@ -182,63 +188,61 @@ export function UserSignatureVerifyPage() {
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>How to get signature base64</h3>
-              <p>Minimal flow outside the browser if you have the private key locally.</p>
+              <h3>{t("scenario1.howToTitle")}</h3>
+              <p>{t("scenario1.howToCopy")}</p>
             </div>
           </div>
 
           <ol className="steps-list">
-            <li>Prepare a text file with the exact message.</li>
-            <li>Sign it with the matching private key.</li>
-            <li>Convert the binary signature to base64.</li>
-            <li>Paste that base64 string into the form on the left.</li>
+            <li>{t("scenario1.step1")}</li>
+            <li>{t("scenario1.step2")}</li>
+            <li>{t("scenario1.step3")}</li>
+            <li>{t("scenario1.step4")}</li>
           </ol>
 
-          <pre className="code-block">{`printf '%s' 'I approve the lab scenario and sign this message.' > message.txt
+          <pre className="code-block">{`printf '%s' '${t("scenario1.defaultMessage").replaceAll("'", "'\\''")}' > message.txt
 openssl dgst -sha256 -sign data/user-keys/user_private.pem -out signature.bin message.txt
 openssl base64 -A -in signature.bin`}</pre>
 
-          <p className="field-hint">
-            The message in the form must match the originally signed bytes exactly.
-          </p>
+          <p className="field-hint">{t("scenario1.matchHint")}</p>
         </article>
       </section>
 
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Verification result</h3>
-            <p>This reflects the backend response from the user-signature verify endpoint.</p>
+            <h3>{t("scenario1.resultTitle")}</h3>
+            <p>{t("scenario1.resultCopy")}</p>
           </div>
         </div>
 
         {result ? (
           <div className="result-stack">
             <div className={result.valid ? "result-chip success" : "result-chip danger"}>
-              {result.valid ? "valid" : "invalid"}
+              {result.valid ? t("common.valid") : t("common.invalid")}
             </div>
             <dl className="details-list">
               <div>
-                <dt>Valid</dt>
+                <dt>{t("scenario1.resultValid")}</dt>
                 <dd>{String(result.valid)}</dd>
               </div>
               <div>
-                <dt>Signer type</dt>
-                <dd>{result.signer_type ?? "Not returned"}</dd>
+                <dt>{t("scenario1.resultSignerType")}</dt>
+                <dd>{translateSignerType(result.signer_type)}</dd>
               </div>
               <div>
-                <dt>Signer user ID</dt>
-                <dd>{result.signer_user_id ?? "Not returned"}</dd>
+                <dt>{t("scenario1.resultSignerUserId")}</dt>
+                <dd>{result.signer_user_id ?? t("common.notReturned")}</dd>
               </div>
               <div>
-                <dt>Verifier message</dt>
-                <dd>{result.error ?? "Signature verified successfully."}</dd>
+                <dt>{t("scenario1.resultVerifierMessage")}</dt>
+                <dd>{result.error ?? t("scenario1.resultSuccess")}</dd>
               </div>
             </dl>
           </div>
         ) : (
           <div className="empty-panel inline-panel">
-            Submit a message and signature to see the verification outcome here.
+            {t("scenario1.resultEmpty")}
           </div>
         )}
       </section>

@@ -1,8 +1,11 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiBaseUrl, apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { LocaleSwitcher } from "../components/LocaleSwitcher";
 import { SecurityNotice } from "../components/SecurityNotice";
+import { translate } from "../locales";
+import { useLocale } from "../locales/LocaleContext";
 
 type RegisterResponse = {
   success: true;
@@ -26,10 +29,10 @@ type ValidationErrors = {
 function validateEmail(value: string): string | undefined {
   const normalized = value.trim();
   if (!normalized) {
-    return "Email is required.";
+    return translate("validation.emailRequired");
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-    return "Enter a valid email address.";
+    return translate("validation.emailInvalid");
   }
   return undefined;
 }
@@ -37,20 +40,20 @@ function validateEmail(value: string): string | undefined {
 function validateName(value: string): string | undefined {
   const normalized = value.trim();
   if (!normalized) {
-    return "Name is required.";
+    return translate("validation.nameRequired");
   }
   if (normalized.length < 2) {
-    return "Name must contain at least 2 characters.";
+    return translate("validation.nameMin");
   }
   return undefined;
 }
 
 function validatePassword(value: string): string | undefined {
   if (!value) {
-    return "Password is required.";
+    return translate("validation.passwordRequired");
   }
   if (value.length < 8) {
-    return "Password must contain at least 8 characters.";
+    return translate("validation.passwordMin");
   }
   return undefined;
 }
@@ -61,16 +64,18 @@ function validatePublicKey(value: string): string | undefined {
     return undefined;
   }
   if (!normalized.includes("BEGIN PUBLIC KEY") || !normalized.includes("END PUBLIC KEY")) {
-    return "Public key must be a PEM-encoded public key block.";
+    return translate("validation.publicKeyInvalid");
   }
   return undefined;
 }
 
 export function RegisterPage() {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const { accessToken, isBootstrapping } = useAuth();
   const [email, setEmail] = useState("web-user@example.com");
-  const [name, setName] = useState("Web User");
+  const defaultNameRef = useRef(t("register.defaultName"));
+  const [name, setName] = useState(defaultNameRef.current);
   const [password, setPassword] = useState("secret-password");
   const [publicKey, setPublicKey] = useState("");
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
@@ -83,6 +88,15 @@ export function RegisterPage() {
       navigate("/app", { replace: true });
     }
   }, [accessToken, isBootstrapping, navigate]);
+
+  useEffect(() => {
+    const previousValue = defaultNameRef.current;
+    const nextValue = t("register.defaultName");
+    if (name === previousValue) {
+      setName(nextValue);
+    }
+    defaultNameRef.current = nextValue;
+  }, [name, t]);
 
   const hasPublicKey = useMemo(() => publicKey.trim().length > 0, [publicKey]);
 
@@ -119,7 +133,7 @@ export function RegisterPage() {
         })
       });
 
-      setSuccessMessage(`User ${response.data.email} registered successfully.`);
+      setSuccessMessage(response.data.email);
       navigate("/login", {
         replace: true,
         state: {
@@ -137,33 +151,29 @@ export function RegisterPage() {
   return (
     <main className="auth-shell auth-shell-wide">
       <section className="auth-hero">
-        <p className="eyebrow">User onboarding</p>
-        <h1>Create an account and bind your public key</h1>
-        <p>
-          Registration now happens through the web UI. The form checks the basic
-          shape of the input before it ever calls the backend, then the server
-          performs the final validation and uniqueness checks.
-        </p>
+        <LocaleSwitcher />
+        <p className="eyebrow">{t("register.eyebrow")}</p>
+        <h1>{t("register.title")}</h1>
+        <p>{t("register.copy")}</p>
         <div className="hero-meta auth-meta">
           <div>
-            <span className="meta-label">API base</span>
+            <span className="meta-label">{t("login.apiBase")}</span>
             <strong>{apiBaseUrl}</strong>
           </div>
           <div>
-            <span className="meta-label">Public key</span>
-            <strong>{hasPublicKey ? "Will be attached" : "Optional at registration"}</strong>
+            <span className="meta-label">{t("register.publicKeyPem")}</span>
+            <strong>{hasPublicKey ? t("register.publicKeyAttached") : t("register.publicKeyOptional")}</strong>
           </div>
         </div>
-        <SecurityNotice title="Security note">
-          Paste only a public key here. Never paste a private key, seed phrase,
-          or any secret signing material into the browser UI.
+        <SecurityNotice title={t("register.securityTitle")}>
+          {t("register.securityCopy")}
         </SecurityNotice>
       </section>
 
       <section className="auth-panel">
         <div className="auth-panel-header">
-          <h2>Register</h2>
-          <p>Create your identity and optionally attach an ECDSA public key now.</p>
+          <h2>{t("register.panelTitle")}</h2>
+          <p>{t("register.panelCopy")}</p>
         </div>
 
         {submitError ? (
@@ -179,7 +189,7 @@ export function RegisterPage() {
 
         <form onSubmit={handleSubmit} noValidate>
           <label>
-            Email
+            {t("login.email")}
             <input
               type="email"
               autoComplete="email"
@@ -197,7 +207,7 @@ export function RegisterPage() {
           </label>
 
           <label>
-            Name
+            {t("register.name")}
             <input
               autoComplete="name"
               value={name}
@@ -214,7 +224,7 @@ export function RegisterPage() {
           </label>
 
           <label>
-            Password
+            {t("login.password")}
             <input
               type="password"
               autoComplete="new-password"
@@ -228,12 +238,12 @@ export function RegisterPage() {
               }
               required
             />
-            <span className="field-hint">Use at least 8 characters.</span>
+            <span className="field-hint">{t("register.passwordHint")}</span>
             {validationErrors.password ? <span className="field-error">{validationErrors.password}</span> : null}
           </label>
 
           <label>
-            Public key PEM
+            {t("register.publicKeyPem")}
             <textarea
               rows={8}
               value={publicKey}
@@ -249,20 +259,18 @@ export function RegisterPage() {
               }
               placeholder="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
             />
-            <span className="field-hint">
-              Optional. Paste a PEM-encoded public key if you want to bind it during onboarding.
-            </span>
+            <span className="field-hint">{t("register.publicKeyHint")}</span>
             {validationErrors.publicKey ? <span className="field-error">{validationErrors.publicKey}</span> : null}
           </label>
 
           <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Creating account..." : "Create account"}
+            {isSubmitting ? t("register.creatingAccount") : t("register.createAccount")}
           </button>
         </form>
 
         <div className="auth-actions">
           <Link className="secondary-link" to="/login">
-            Already have an account? Sign in
+            {t("register.alreadyHaveAccount")}
           </Link>
         </div>
       </section>

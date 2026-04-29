@@ -6,6 +6,7 @@ import {
   useMemo,
   useState
 } from "react";
+import { useLocale } from "../locales/LocaleContext";
 import type { FeedbackTone } from "./feedback";
 
 type Toast = {
@@ -24,6 +25,7 @@ type ToastContextValue = {
 const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useLocale();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const removeToast = useCallback((id: number) => {
@@ -49,7 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <p>{toast.message}</p>
             </div>
             <button className="ghost-button" onClick={() => removeToast(toast.id)}>
-              Dismiss
+              {t("common.dismiss")}
             </button>
           </div>
         ))}

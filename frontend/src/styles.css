@@ -723,3 +723,9 @@ form button,
     bottom: 12px;
   }
 }
+
+.locale-switcher {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}

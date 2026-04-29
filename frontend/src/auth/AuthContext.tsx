@@ -8,6 +8,7 @@ import {
   useState
 } from "react";
 import { apiClient, ApiClientError } from "../api/client";
+import { useLocale } from "../locales/LocaleContext";
 import {
   clearStoredSession,
   loadStoredToken,
@@ -32,6 +33,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { t } = useLocale();
   const { pushToast } = useToast();
   const [accessToken, setAccessToken] = useState<string | null>(() => loadStoredToken());
   const [currentUser, setCurrentUser] = useState<User | null>(() => loadStoredUser());
@@ -49,23 +51,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getAccessToken: () => accessToken,
       onUnauthorized: () => {
         logout();
-        setAuthNotice("Session expired. Please log in again.");
+        setAuthNotice(t("auth.noticeSessionExpired"));
         pushToast({
-          title: "Session expired",
-          message: "Your token expired or became invalid. Please sign in again.",
+          title: t("auth.toastSessionExpiredTitle"),
+          message: t("auth.toastSessionExpiredMessage"),
           tone: "warning"
         });
       },
       onForbidden: () => {
-        setAuthNotice("Access denied for this action.");
+        setAuthNotice(t("auth.noticeForbidden"));
         pushToast({
-          title: "Access denied",
-          message: "You do not have permission to perform that action.",
+          title: t("auth.toastForbiddenTitle"),
+          message: t("auth.toastForbiddenMessage"),
           tone: "warning"
         });
       }
     });
-  }, [accessToken, logout, pushToast]);
+  }, [accessToken, logout, pushToast, t]);
 
   const refreshCurrentUser = useCallback(async () => {
     const response = await apiClient.request<{ data: User }>("/auth/me");

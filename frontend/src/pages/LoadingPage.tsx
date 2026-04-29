@@ -1,10 +1,14 @@
-export function LoadingPage({ label = "Loading" }: { label?: string }) {
+import { useLocale } from "../locales/LocaleContext";
+
+export function LoadingPage({ label }: { label?: string }) {
+  const { t } = useLocale();
+
   return (
     <main className="status-page status-loading">
       <div className="status-card">
-        <p className="eyebrow">Please wait</p>
-        <h1>{label}</h1>
-        <p>We are preparing the next screen and syncing the latest auth state.</p>
+        <p className="eyebrow">{t("common.pleaseWait")}</p>
+        <h1>{label ?? t("loading.defaultLabel")}</h1>
+        <p>{t("loading.copy")}</p>
       </div>
     </main>
   );

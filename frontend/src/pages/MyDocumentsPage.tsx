@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { translateStatus } from "../locales";
+import { useLocale } from "../locales/LocaleContext";
+import { describeApiError } from "../ui/feedback";
+import { useToast } from "../ui/ToastContext";
 
 type ApiEnvelope<T> = {
   success: true;
@@ -30,19 +34,9 @@ type DocumentAuditResponse = {
   sent_at?: string;
 };
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(date);
-}
-
 export function MyDocumentsPage() {
+  const { t, formatDateTime } = useLocale();
+  const { pushToast } = useToast();
   const [documents, setDocuments] = useState<UserDocumentListItem[]>([]);
   const [selectedAudit, setSelectedAudit] = useState<DocumentAuditResponse | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -66,7 +60,9 @@ export function MyDocumentsPage() {
       );
       setDocuments(response.data);
     } catch (error) {
-      setPageError((error as Error).message);
+      const feedback = describeApiError(error);
+      setPageError(feedback.message);
+      pushToast(feedback);
     } finally {
       if (mode === "initial") {
         setIsLoading(false);
@@ -90,7 +86,9 @@ export function MyDocumentsPage() {
       );
       setSelectedAudit(response.data);
     } catch (error) {
-      setAuditError((error as Error).message);
+      const feedback = describeApiError(error);
+      setAuditError(feedback.message);
+      pushToast(feedback);
     } finally {
       setLoadingAuditFor(null);
     }
@@ -99,13 +97,9 @@ export function MyDocumentsPage() {
   return (
     <div className="dashboard-grid">
       <section className="content-hero">
-        <p className="eyebrow">My documents</p>
-        <h2>Your document workspace</h2>
-        <p>
-          This list shows the documents owned by the current user, their current
-          delivery status, and a quick path to the audit trail or the full
-          document flow screen.
-        </p>
+        <p className="eyebrow">{t("documents.eyebrow")}</p>
+        <h2>{t("documents.title")}</h2>
+        <p>{t("documents.copy")}</p>
         <div className="form-actions-row top-gap">
           <button
             type="button"
@@ -113,17 +107,17 @@ export function MyDocumentsPage() {
             onClick={() => void loadDocuments("refresh")}
             disabled={isRefreshing}
           >
-            {isRefreshing ? "Refreshing..." : "Refresh list"}
+            {isRefreshing ? t("common.refreshing") : t("documents.refreshList")}
           </button>
           <Link className="primary-link" to="/app/documents/flow">
-            New document flow
+            {t("documents.newFlow")}
           </Link>
         </div>
       </section>
 
       {pageError ? (
         <section className="panel status-panel">
-          <h3>Could not load documents</h3>
+          <h3>{t("documents.loadErrorTitle")}</h3>
           <p>{pageError}</p>
         </section>
       ) : null}
@@ -131,16 +125,16 @@ export function MyDocumentsPage() {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Document list</h3>
-            <p>Protected `GET /api/v1/documents/me` for the current owner.</p>
+            <h3>{t("documents.listTitle")}</h3>
+            <p>{t("documents.listCopy")}</p>
           </div>
         </div>
 
         {isLoading ? (
-          <div className="empty-panel inline-panel">Loading your documents...</div>
+          <div className="empty-panel inline-panel">{t("documents.loading")}</div>
         ) : documents.length === 0 ? (
           <div className="empty-panel inline-panel">
-            You do not have any documents yet. Start with the document flow screen.
+            {t("documents.empty")}
           </div>
         ) : (
           <div className="documents-grid">
@@ -151,17 +145,17 @@ export function MyDocumentsPage() {
                     <h4>{document.original_file_name}</h4>
                     <p>{document.document_id}</p>
                   </div>
-                  <span className="status-badge">{document.send_status || "created"}</span>
+                  <span className="status-badge">{translateStatus(document.send_status)}</span>
                 </div>
 
                 <dl className="details-list compact-details">
                   <div>
-                    <dt>Recipient</dt>
+                    <dt>{t("documents.recipient")}</dt>
                     <dd>{document.recipient_email}</dd>
                   </div>
                   <div>
-                    <dt>Created at</dt>
-                    <dd>{formatDate(document.created_at)}</dd>
+                    <dt>{t("documents.createdAt")}</dt>
+                    <dd>{formatDateTime(document.created_at)}</dd>
                   </div>
                 </dl>
 
@@ -172,10 +166,10 @@ export function MyDocumentsPage() {
                     onClick={() => void handleViewAudit(document.document_id)}
                     disabled={loadingAuditFor === document.document_id}
                   >
-                    {loadingAuditFor === document.document_id ? "Loading audit..." : "View audit"}
+                    {loadingAuditFor === document.document_id ? t("documents.loadingAudit") : t("documents.viewAudit")}
                   </button>
                   <Link className="secondary-link" to={`/app/documents/${document.document_id}`}>
-                    Open details
+                    {t("documents.openDetails")}
                   </Link>
                 </div>
               </article>
@@ -187,8 +181,8 @@ export function MyDocumentsPage() {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Audit details</h3>
-            <p>Selected document audit appears here.</p>
+            <h3>{t("documents.auditTitle")}</h3>
+            <p>{t("documents.auditCopy")}</p>
           </div>
         </div>
 
@@ -201,41 +195,41 @@ export function MyDocumentsPage() {
         {selectedAudit ? (
           <dl className="details-list audit-grid">
             <div>
-              <dt>Document ID</dt>
+              <dt>{t("scenario3.documentId")}</dt>
               <dd>{selectedAudit.document_id}</dd>
             </div>
             <div>
-              <dt>Original file</dt>
+              <dt>{t("scenario3.originalFile")}</dt>
               <dd>{selectedAudit.original_file_name}</dd>
             </div>
             <div>
-              <dt>Recipient email</dt>
+              <dt>{t("scenario3.recipientEmailField")}</dt>
               <dd>{selectedAudit.recipient_email}</dd>
             </div>
             <div>
-              <dt>Send status</dt>
-              <dd>{selectedAudit.send_status || "Not returned"}</dd>
+              <dt>{t("scenario3.sendStatus")}</dt>
+              <dd>{selectedAudit.send_status ? translateStatus(selectedAudit.send_status) : t("common.notReturned")}</dd>
             </div>
             <div>
-              <dt>Owner user ID</dt>
+              <dt>{t("scenario3.ownerUserId")}</dt>
               <dd>{selectedAudit.owner_user_id}</dd>
             </div>
             <div>
-              <dt>Signed by user ID</dt>
+              <dt>{t("scenario3.signedByUserId")}</dt>
               <dd>{selectedAudit.signed_by_user_id}</dd>
             </div>
             <div>
-              <dt>Sent by user ID</dt>
-              <dd>{selectedAudit.sent_by_user_id || "Not returned"}</dd>
+              <dt>{t("scenario3.sentByUserId")}</dt>
+              <dd>{selectedAudit.sent_by_user_id || t("common.notReturned")}</dd>
             </div>
             <div>
-              <dt>Created at</dt>
-              <dd>{formatDate(selectedAudit.created_at)}</dd>
+              <dt>{t("documents.createdAt")}</dt>
+              <dd>{formatDateTime(selectedAudit.created_at)}</dd>
             </div>
           </dl>
         ) : (
           <div className="empty-panel inline-panel">
-            Pick any document from the list to inspect its audit trail.
+            {t("documents.auditEmpty")}
           </div>
         )}
       </section>

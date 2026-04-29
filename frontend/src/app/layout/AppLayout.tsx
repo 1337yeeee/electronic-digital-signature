@@ -1,47 +1,49 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
+import { LocaleSwitcher } from "../../components/LocaleSwitcher";
+import { useLocale } from "../../locales/LocaleContext";
 
 export function AppLayout() {
   const { currentUser, logout, authNotice, clearAuthNotice } = useAuth();
+  const { t } = useLocale();
 
   return (
     <main className="app-shell">
       <aside className="app-sidebar">
-        <p className="eyebrow">EDS Lab</p>
-        <h1>Web console</h1>
-        <p className="sidebar-copy">
-          Authenticated workspace for signatures, users, and document flows.
-        </p>
+        <LocaleSwitcher />
+        <p className="eyebrow">{t("layout.brandEyebrow")}</p>
+        <h1>{t("layout.brandTitle")}</h1>
+        <p className="sidebar-copy">{t("layout.sidebarCopy")}</p>
 
         <nav className="app-nav">
           <NavLink to="/app" end>
-            Overview
+            {t("layout.nav.overview")}
           </NavLink>
           <NavLink to="/app/profile">
-            Profile
+            {t("layout.nav.profile")}
           </NavLink>
           <NavLink to="/app/documents" end>
-            My Documents
+            {t("layout.nav.myDocuments")}
           </NavLink>
           <NavLink to="/app/documents/flow">
-            Document Flow
+            {t("layout.nav.documentFlow")}
           </NavLink>
           <NavLink to="/app/server-signed-message">
-            Server Signed
+            {t("layout.nav.serverSigned")}
           </NavLink>
           <NavLink to="/app/signatures/verify">
-            Verify Signature
+            {t("layout.nav.verifySignature")}
           </NavLink>
         </nav>
 
         <div className="user-chip">
-          <span className="meta-label">Signed in as</span>
-          <strong>{currentUser?.name ?? currentUser?.email ?? "Unknown user"}</strong>
+          <span className="meta-label">{t("layout.signedInAs")}</span>
+          <strong>{currentUser?.name ?? currentUser?.email ?? t("layout.unknownUser")}</strong>
           <small>{currentUser?.email}</small>
         </div>
 
         <button className="secondary-button" onClick={logout}>
-          Logout
+          {t("common.logout")}
         </button>
       </aside>
 
@@ -50,7 +52,7 @@ export function AppLayout() {
           <div className="notice-banner" role="alert">
             <span>{authNotice}</span>
             <button className="ghost-button" onClick={clearAuthNotice}>
-              Dismiss
+              {t("common.dismiss")}
             </button>
           </div>
         ) : null}

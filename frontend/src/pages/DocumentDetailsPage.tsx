@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { translateStatus } from "../locales";
+import { useLocale } from "../locales/LocaleContext";
 import { describeApiError } from "../ui/feedback";
 import { useToast } from "../ui/ToastContext";
 
@@ -50,23 +52,8 @@ type SendDocumentResponse = {
   sent_at?: string;
 };
 
-function formatDate(value?: string): string {
-  if (!value) {
-    return "Not available";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(date);
-}
-
 export function DocumentDetailsPage() {
+  const { t, formatDateTime } = useLocale();
   const { pushToast } = useToast();
   const { id = "" } = useParams();
   const [documentDetails, setDocumentDetails] = useState<DocumentDetails | null>(null);
@@ -96,13 +83,13 @@ export function DocumentDetailsPage() {
 
   useEffect(() => {
     if (!id) {
-      setPageError("Document id is missing.");
+      setPageError(t("validation.documentIdMissing"));
       setIsLoading(false);
       return;
     }
 
     void loadDocument();
-  }, [id]);
+  }, [id, t]);
 
   async function handleResend() {
     if (!documentDetails) {
@@ -124,11 +111,14 @@ export function DocumentDetailsPage() {
       );
 
       setActionNotice(
-        `Package resent to ${response.data.recipient_email}. Status: ${response.data.send_status}.`
+        t("documentDetails.actionNotice", {
+          email: response.data.recipient_email,
+          status: translateStatus(response.data.send_status)
+        })
       );
       pushToast({
-        title: "Package resent",
-        message: `Package resent to ${response.data.recipient_email}.`,
+        title: t("documentDetails.toastResentTitle"),
+        message: t("documentDetails.toastResentMessage", { email: response.data.recipient_email }),
         tone: "success"
       });
       await loadDocument();
@@ -154,8 +144,8 @@ export function DocumentDetailsPage() {
       );
       setAuditDetails(response.data);
       pushToast({
-        title: "Audit loaded",
-        message: "The audit data for this document is now visible.",
+        title: t("documentDetails.toastAuditTitle"),
+        message: t("documentDetails.toastAuditMessage"),
         tone: "info"
       });
     } catch (error) {
@@ -170,26 +160,22 @@ export function DocumentDetailsPage() {
   return (
     <div className="dashboard-grid">
       <section className="content-hero">
-        <p className="eyebrow">Document details</p>
-        <h2>Single document workspace</h2>
-        <p>
-          This page gives one document its own clear card: who owns it, who
-          signed and sent it, when it moved through the flow, and quick actions
-          to resend or inspect audit details.
-        </p>
+        <p className="eyebrow">{t("documentDetails.eyebrow")}</p>
+        <h2>{t("documentDetails.title")}</h2>
+        <p>{t("documentDetails.copy")}</p>
         <div className="form-actions-row top-gap">
           <Link className="secondary-link" to="/app/documents">
-            Back to my documents
+            {t("documentDetails.back")}
           </Link>
           <Link className="secondary-link" to="/app/documents/flow">
-            Open document flow
+            {t("documentDetails.openFlow")}
           </Link>
         </div>
       </section>
 
       {pageError ? (
         <section className="panel status-panel">
-          <h3>Could not load document</h3>
+          <h3>{t("documentDetails.loadErrorTitle")}</h3>
           <p>{pageError}</p>
         </section>
       ) : null}
@@ -204,8 +190,8 @@ export function DocumentDetailsPage() {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Document card</h3>
-            <p>Protected `GET /api/v1/documents/:id` for the current owner.</p>
+            <h3>{t("documentDetails.cardTitle")}</h3>
+            <p>{t("documentDetails.cardCopy")}</p>
           </div>
           <div className="form-actions-row">
             <button
@@ -214,78 +200,78 @@ export function DocumentDetailsPage() {
               onClick={handleLoadAudit}
               disabled={isLoading || isLoadingAudit || !documentDetails}
             >
-              {isLoadingAudit ? "Loading audit..." : "View audit"}
+              {isLoadingAudit ? t("documentDetails.loadingAudit") : t("documentDetails.viewAudit")}
             </button>
             <button
               type="button"
               onClick={handleResend}
               disabled={isLoading || isResending || !documentDetails}
             >
-              {isResending ? "Resending..." : "Resend"}
+              {isResending ? t("documentDetails.resending") : t("common.resend")}
             </button>
           </div>
         </div>
 
         {isLoading ? (
-          <div className="empty-panel inline-panel">Loading document details...</div>
+          <div className="empty-panel inline-panel">{t("documentDetails.loading")}</div>
         ) : documentDetails ? (
           <div className="profile-grid">
             <article className="panel panel-soft">
-              <h3>Identity</h3>
+              <h3>{t("documentDetails.identityTitle")}</h3>
               <dl className="details-list compact-details">
                 <div>
-                  <dt>Document ID</dt>
+                  <dt>{t("scenario3.documentId")}</dt>
                   <dd>{documentDetails.document_id}</dd>
                 </div>
                 <div>
-                  <dt>Original file</dt>
+                  <dt>{t("scenario3.originalFile")}</dt>
                   <dd>{documentDetails.original_file_name}</dd>
                 </div>
                 <div>
-                  <dt>MIME type</dt>
+                  <dt>{t("documentDetails.mimeType")}</dt>
                   <dd>{documentDetails.mime_type}</dd>
                 </div>
                 <div>
-                  <dt>Recipient email</dt>
+                  <dt>{t("scenario3.recipientEmailField")}</dt>
                   <dd>{documentDetails.recipient_email}</dd>
                 </div>
                 <div>
-                  <dt>Owner email</dt>
+                  <dt>{t("documentDetails.ownerEmail")}</dt>
                   <dd>{documentDetails.owner_email}</dd>
                 </div>
                 <div>
-                  <dt>Send status</dt>
-                  <dd>{documentDetails.send_status || "created"}</dd>
+                  <dt>{t("scenario3.sendStatus")}</dt>
+                  <dd>{translateStatus(documentDetails.send_status)}</dd>
                 </div>
               </dl>
             </article>
 
             <article className="panel panel-soft">
-              <h3>Trace</h3>
+              <h3>{t("documentDetails.traceTitle")}</h3>
               <dl className="details-list compact-details">
                 <div>
-                  <dt>Owner user ID</dt>
+                  <dt>{t("scenario3.ownerUserId")}</dt>
                   <dd>{documentDetails.owner_user_id}</dd>
                 </div>
                 <div>
-                  <dt>Signed by user ID</dt>
+                  <dt>{t("scenario3.signedByUserId")}</dt>
                   <dd>{documentDetails.signed_by_user_id}</dd>
                 </div>
                 <div>
-                  <dt>Sent by user ID</dt>
-                  <dd>{documentDetails.sent_by_user_id || "Not sent yet"}</dd>
+                  <dt>{t("scenario3.sentByUserId")}</dt>
+                  <dd>{documentDetails.sent_by_user_id || t("documentDetails.notSentYet")}</dd>
                 </div>
                 <div>
-                  <dt>Created at</dt>
-                  <dd>{formatDate(documentDetails.created_at)}</dd>
+                  <dt>{t("documents.createdAt")}</dt>
+                  <dd>{formatDateTime(documentDetails.created_at)}</dd>
                 </div>
                 <div>
-                  <dt>Signed at</dt>
-                  <dd>{formatDate(documentDetails.signed_at)}</dd>
+                  <dt>{t("scenario3.signedAt")}</dt>
+                  <dd>{formatDateTime(documentDetails.signed_at)}</dd>
                 </div>
                 <div>
-                  <dt>Sent at</dt>
-                  <dd>{formatDate(documentDetails.sent_at)}</dd>
+                  <dt>{t("scenario3.sentAt")}</dt>
+                  <dd>{formatDateTime(documentDetails.sent_at)}</dd>
                 </div>
               </dl>
             </article>
@@ -296,8 +282,8 @@ export function DocumentDetailsPage() {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Audit</h3>
-            <p>Load the audit trail for deeper event context.</p>
+            <h3>{t("documentDetails.auditTitle")}</h3>
+            <p>{t("documentDetails.auditCopy")}</p>
           </div>
         </div>
 
@@ -310,41 +296,41 @@ export function DocumentDetailsPage() {
         {auditDetails ? (
           <dl className="details-list audit-grid">
             <div>
-              <dt>Document ID</dt>
+              <dt>{t("scenario3.documentId")}</dt>
               <dd>{auditDetails.document_id}</dd>
             </div>
             <div>
-              <dt>Owner user ID</dt>
+              <dt>{t("scenario3.ownerUserId")}</dt>
               <dd>{auditDetails.owner_user_id}</dd>
             </div>
             <div>
-              <dt>Signed by user ID</dt>
+              <dt>{t("scenario3.signedByUserId")}</dt>
               <dd>{auditDetails.signed_by_user_id}</dd>
             </div>
             <div>
-              <dt>Sent by user ID</dt>
-              <dd>{auditDetails.sent_by_user_id || "Not returned"}</dd>
+              <dt>{t("scenario3.sentByUserId")}</dt>
+              <dd>{auditDetails.sent_by_user_id || t("common.notReturned")}</dd>
             </div>
             <div>
-              <dt>Recipient email</dt>
+              <dt>{t("scenario3.recipientEmailField")}</dt>
               <dd>{auditDetails.recipient_email}</dd>
             </div>
             <div>
-              <dt>Send status</dt>
-              <dd>{auditDetails.send_status || "Not returned"}</dd>
+              <dt>{t("scenario3.sendStatus")}</dt>
+              <dd>{auditDetails.send_status ? translateStatus(auditDetails.send_status) : t("common.notReturned")}</dd>
             </div>
             <div>
-              <dt>Created at</dt>
-              <dd>{formatDate(auditDetails.created_at)}</dd>
+              <dt>{t("documents.createdAt")}</dt>
+              <dd>{formatDateTime(auditDetails.created_at)}</dd>
             </div>
             <div>
-              <dt>Sent at</dt>
-              <dd>{formatDate(auditDetails.sent_at)}</dd>
+              <dt>{t("scenario3.sentAt")}</dt>
+              <dd>{formatDateTime(auditDetails.sent_at, "common.notReturned")}</dd>
             </div>
           </dl>
         ) : (
           <div className="empty-panel inline-panel">
-            Use “View audit” to load the document audit trail.
+            {t("documentDetails.auditEmpty")}
           </div>
         )}
       </section>

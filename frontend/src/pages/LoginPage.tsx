@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { apiBaseUrl } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { LocaleSwitcher } from "../components/LocaleSwitcher";
+import { useLocale } from "../locales/LocaleContext";
 import { describeApiError } from "../ui/feedback";
 import { useToast } from "../ui/ToastContext";
 
@@ -14,20 +16,18 @@ type LocationState = {
 };
 
 export function LoginPage() {
+  const { t } = useLocale();
   const { pushToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const { accessToken, login, authNotice, clearAuthNotice, isBootstrapping } = useAuth();
   const locationState = location.state as LocationState | null;
-  const [email, setEmail] = useState(
-    locationState?.registeredEmail ?? "web-user@example.com"
-  );
+  const [email, setEmail] = useState(locationState?.registeredEmail ?? "web-user@example.com");
   const [password, setPassword] = useState("secret-password");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const nextPath =
-    (locationState?.from?.pathname || "/app");
+  const nextPath = locationState?.from?.pathname || "/app";
 
   useEffect(() => {
     if (!isBootstrapping && accessToken) {
@@ -44,8 +44,8 @@ export function LoginPage() {
     try {
       await login(email, password);
       pushToast({
-        title: "Signed in",
-        message: "Welcome back. Your workspace is ready.",
+        title: t("login.toastTitle"),
+        message: t("login.toastMessage"),
         tone: "success"
       });
       navigate(nextPath, { replace: true });
@@ -61,28 +61,26 @@ export function LoginPage() {
   return (
     <main className="auth-shell">
       <section className="auth-hero">
-        <p className="eyebrow">Scenario-ready frontend</p>
-        <h1>Sign in to the digital signature workspace</h1>
-        <p>
-          The frontend now uses routed pages, stored JWT auth, protected routes,
-          and a shared API client with centralized 401 and 403 handling.
-        </p>
+        <LocaleSwitcher />
+        <p className="eyebrow">{t("login.eyebrow")}</p>
+        <h1>{t("login.title")}</h1>
+        <p>{t("login.copy")}</p>
         <div className="hero-meta auth-meta">
           <div>
-            <span className="meta-label">API base</span>
+            <span className="meta-label">{t("login.apiBase")}</span>
             <strong>{apiBaseUrl}</strong>
           </div>
           <div>
-            <span className="meta-label">Flow</span>
-            <strong>Login - JWT - Protected routes</strong>
+            <span className="meta-label">{t("login.flow")}</span>
+            <strong>{t("login.flowValue")}</strong>
           </div>
         </div>
       </section>
 
       <section className="auth-panel">
         <div className="auth-panel-header">
-          <h2>Login</h2>
-          <p>Use an existing registered user to enter the protected area.</p>
+          <h2>{t("login.panelTitle")}</h2>
+          <p>{t("login.panelCopy")}</p>
         </div>
 
         {authNotice ? (
@@ -92,7 +90,7 @@ export function LoginPage() {
         ) : null}
         {locationState?.registered ? (
           <div className="inline-notice" role="status">
-            Registration completed. You can sign in now.
+            {t("login.registrationCompleted")}
           </div>
         ) : null}
         {formError ? (
@@ -103,7 +101,7 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit}>
           <label>
-            Email
+            {t("login.email")}
             <input
               type="email"
               autoComplete="email"
@@ -113,7 +111,7 @@ export function LoginPage() {
             />
           </label>
           <label>
-            Password
+            {t("login.password")}
             <input
               type="password"
               autoComplete="current-password"
@@ -123,20 +121,17 @@ export function LoginPage() {
             />
           </label>
           <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Signing in..." : "Sign in"}
+            {isSubmitting ? t("login.signingIn") : t("login.signIn")}
           </button>
         </form>
 
-        <p className="auth-footnote">
-          Need a user first? Create one directly in the web app and then return
-          here to continue the authenticated scenarios.
-        </p>
+        <p className="auth-footnote">{t("login.footnote")}</p>
         <div className="auth-actions">
           <Link className="secondary-link" to="/register">
-            Create account
+            {t("login.createAccount")}
           </Link>
           <Link className="secondary-link" to="/app">
-            Try protected route
+            {t("login.tryProtectedRoute")}
           </Link>
         </div>
       </section>

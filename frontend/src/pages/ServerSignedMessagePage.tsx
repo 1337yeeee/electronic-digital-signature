@@ -1,5 +1,9 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../api/client";
+import { translateSignerType } from "../locales";
+import { useLocale } from "../locales/LocaleContext";
+import { describeApiError } from "../ui/feedback";
+import { useToast } from "../ui/ToastContext";
 
 type ServerPublicKeyResponse = {
   algorithm: string;
@@ -42,16 +46,26 @@ function encodeUtf8Base64(value: string) {
 }
 
 export function ServerSignedMessagePage() {
+  const { t } = useLocale();
+  const defaultMessageRef = useRef(t("scenario2.defaultMessage"));
   const [serverPublicKey, setServerPublicKey] = useState<ServerPublicKeyResponse | null>(null);
   const [publicKeyError, setPublicKeyError] = useState<string | null>(null);
-  const [messageValue, setMessageValue] = useState(
-    "Server, please sign this message so I can verify it externally."
-  );
+  const [messageValue, setMessageValue] = useState(defaultMessageRef.current);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [result, setResult] = useState<IssueServerMessageResponse | null>(null);
   const [isLoadingKey, setIsLoadingKey] = useState(false);
   const [isIssuing, setIsIssuing] = useState(false);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const { pushToast } = useToast();
+
+  useEffect(() => {
+    const nextValue = t("scenario2.defaultMessage");
+    const previousValue = defaultMessageRef.current;
+    if (messageValue === previousValue) {
+      setMessageValue(nextValue);
+    }
+    defaultMessageRef.current = nextValue;
+  }, [messageValue, t]);
 
   const exportPayload = useMemo(() => {
     if (!result && !serverPublicKey) {
@@ -109,7 +123,9 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
       );
       setServerPublicKey(response);
     } catch (error) {
-      setPublicKeyError((error as Error).message);
+      const feedback = describeApiError(error);
+      setPublicKeyError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsLoadingKey(false);
     }
@@ -133,7 +149,9 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
       );
       setResult(response);
     } catch (error) {
-      setRequestError((error as Error).message);
+      const feedback = describeApiError(error);
+      setRequestError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsIssuing(false);
     }
@@ -142,9 +160,9 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
   async function handleCopy(label: string, value: string) {
     try {
       await copyToClipboard(value);
-      setCopyNotice(`${label} copied to clipboard.`);
+      setCopyNotice(t("scenario2.copySuccess", { label }));
     } catch {
-      setCopyNotice(`Could not copy ${label.toLowerCase()} automatically.`);
+      setCopyNotice(t("scenario2.copyFailed", { label: label.toLowerCase() }));
     }
   }
 
@@ -158,24 +176,20 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
   return (
     <div className="dashboard-grid">
       <section className="content-hero">
-        <p className="eyebrow">Scenario 2</p>
-        <h2>Server signs, client verifies</h2>
-        <p>
-          This screen lets you fetch the server public key, ask the backend to
-          sign a message, and export the exact verification data for an external
-          tool such as OpenSSL or a local script.
-        </p>
+        <p className="eyebrow">{t("scenario2.eyebrow")}</p>
+        <h2>{t("scenario2.title")}</h2>
+        <p>{t("scenario2.copy")}</p>
       </section>
 
       <section className="scenario-grid">
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>1. Get server public key</h3>
-              <p>Calls `GET /api/v1/server/public-key`.</p>
+              <h3>{t("scenario2.step1Title")}</h3>
+              <p>{t("scenario2.step1Copy")}</p>
             </div>
             <button className="secondary-button" onClick={loadServerPublicKey} disabled={isLoadingKey}>
-              {isLoadingKey ? "Loading..." : "Get public key"}
+              {isLoadingKey ? t("scenario2.loadingKey") : t("scenario2.getPublicKey")}
             </button>
           </div>
 
@@ -186,18 +200,18 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
           ) : null}
 
           <pre className="pem-preview">
-            {serverPublicKey?.public_key_pem || "Server public key has not been loaded yet."}
+            {serverPublicKey?.public_key_pem || t("scenario2.publicKeyNotLoaded")}
           </pre>
           <p className="field-hint">
-            Algorithm: {serverPublicKey?.algorithm ?? "Not loaded yet"}
+            {t("scenario2.algorithm")}: {serverPublicKey?.algorithm ?? t("scenario2.algorithmNotLoaded")}
           </p>
         </article>
 
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>2. Request signed message</h3>
-              <p>Calls protected `POST /api/v1/server/messages`.</p>
+              <h3>{t("scenario2.step2Title")}</h3>
+              <p>{t("scenario2.step2Copy")}</p>
             </div>
           </div>
 
@@ -214,21 +228,19 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
 
           <form onSubmit={handleIssueMessage}>
             <label>
-              Message
+              {t("scenario2.message")}
               <textarea
                 rows={5}
                 value={messageValue}
                 onChange={(event) => setMessageValue(event.target.value)}
-                placeholder="Leave blank to let the server generate a message"
+                placeholder={t("scenario2.messagePlaceholder")}
               />
-              <span className="field-hint">
-                If you clear the field entirely, the backend may generate a timestamped message for you.
-              </span>
+              <span className="field-hint">{t("scenario2.messageHint")}</span>
             </label>
 
             <div className="form-actions-row">
               <button type="submit" disabled={isIssuing}>
-                {isIssuing ? "Requesting..." : "Request signed message"}
+                {isIssuing ? t("scenario2.requestingMessage") : t("scenario2.requestMessage")}
               </button>
               <button
                 type="button"
@@ -236,7 +248,7 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
                 onClick={handleExport}
                 disabled={!exportPayload}
               >
-                Export JSON
+                {t("scenario2.exportJson")}
               </button>
             </div>
           </form>
@@ -246,8 +258,8 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Verification payload</h3>
-            <p>Use these exact values in any external verification flow.</p>
+            <h3>{t("scenario2.payloadTitle")}</h3>
+            <p>{t("scenario2.payloadCopy")}</p>
           </div>
         </div>
 
@@ -257,88 +269,88 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => handleCopy("Message", result.message)}
+                onClick={() => handleCopy(t("scenario2.labelMessage"), result.message)}
               >
-                Copy message
+                {t("scenario2.copyMessage")}
               </button>
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => handleCopy("Signature", result.signature_base64)}
+                onClick={() => handleCopy(t("scenario2.labelSignature"), result.signature_base64)}
               >
-                Copy signature
+                {t("scenario2.copySignature")}
               </button>
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => handleCopy("Hash", result.hash_base64)}
+                onClick={() => handleCopy(t("scenario2.labelHash"), result.hash_base64)}
               >
-                Copy hash
+                {t("scenario2.copyHash")}
               </button>
               <button
                 className="secondary-button"
                 type="button"
                 onClick={() =>
                   handleCopy(
-                    "Public key",
+                    t("scenario2.labelPublicKey"),
                     serverPublicKey?.public_key_pem ?? ""
                   )
                 }
                 disabled={!serverPublicKey?.public_key_pem}
               >
-                Copy public key
+                {t("scenario2.copyPublicKey")}
               </button>
               <button
                 className="secondary-button"
                 type="button"
                 onClick={() =>
                   verificationScript &&
-                  handleCopy("Verification script", verificationScript)
+                  handleCopy(t("scenario2.labelVerificationScript"), verificationScript)
                 }
                 disabled={!verificationScript}
               >
-                Copy verification script
+                {t("scenario2.copyScript")}
               </button>
             </div>
 
             <dl className="details-list">
               <div>
-                <dt>Message</dt>
+                <dt>{t("scenario2.messageField")}</dt>
                 <dd>{result.message}</dd>
               </div>
               <div>
-                <dt>Signature base64</dt>
+                <dt>{t("scenario2.signatureField")}</dt>
                 <dd className="long-value">{result.signature_base64}</dd>
               </div>
               <div>
-                <dt>Hash base64</dt>
+                <dt>{t("scenario2.hashField")}</dt>
                 <dd className="long-value">{result.hash_base64}</dd>
               </div>
               <div>
-                <dt>Signer type</dt>
-                <dd>{result.signer_type}</dd>
+                <dt>{t("scenario2.signerType")}</dt>
+                <dd>{translateSignerType(result.signer_type)}</dd>
               </div>
               <div>
-                <dt>Created by user ID</dt>
-                <dd>{result.created_by_user_id ?? "Not returned"}</dd>
+                <dt>{t("scenario2.createdBy")}</dt>
+                <dd>{result.created_by_user_id ?? t("common.notReturned")}</dd>
               </div>
               <div>
-                <dt>Created at</dt>
+                <dt>{t("scenario2.createdAt")}</dt>
                 <dd>{result.created_at}</dd>
               </div>
               <div>
-                <dt>Message ID</dt>
+                <dt>{t("scenario2.messageId")}</dt>
                 <dd>{result.message_id}</dd>
               </div>
               <div>
-                <dt>Algorithm</dt>
+                <dt>{t("scenario2.algorithm")}</dt>
                 <dd>{result.algorithm}</dd>
               </div>
             </dl>
           </div>
         ) : (
           <div className="empty-panel inline-panel">
-            Request a server-signed message to see the verification payload here.
+            {t("scenario2.payloadEmpty")}
           </div>
         )}
       </section>
@@ -346,12 +358,8 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h3>Copyable verification script</h3>
-            <p>
-              Copy this script into your shell environment to recreate the
-              public key, message and signature locally, then verify them with
-              `openssl`.
-            </p>
+            <h3>{t("scenario2.scriptTitle")}</h3>
+            <p>{t("scenario2.scriptCopy")}</p>
           </div>
         </div>
 
@@ -362,17 +370,15 @@ openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => handleCopy("Verification script", verificationScript)}
+                onClick={() => handleCopy(t("scenario2.labelVerificationScript"), verificationScript)}
               >
-                Copy script
+                {t("scenario2.copyScript")}
               </button>
             </div>
           </div>
         ) : (
           <div className="empty-panel inline-panel">
-            Load the server public key and request a signed message first. The
-            verification script will be generated automatically from those
-            values.
+            {t("scenario2.scriptEmpty")}
           </div>
         )}
       </section>
