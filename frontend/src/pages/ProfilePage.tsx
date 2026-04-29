@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ApiClientError, apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { SecurityNotice } from "../components/SecurityNotice";
 import type { User } from "../types/auth";
 
 type UpdatePublicKeyResponse = {
@@ -126,6 +127,10 @@ export function ProfilePage() {
           This page shows the current user identity from the authenticated API
           and lets you rotate the active public key without leaving the web app.
         </p>
+        <SecurityNotice title="Security note">
+          Update only the public key you want the server to use for verification.
+          Private keys must stay outside the browser and outside this system.
+        </SecurityNotice>
       </section>
 
       <section className="profile-grid">
@@ -208,6 +213,9 @@ export function ProfilePage() {
               rows={10}
               value={publicKey}
               onChange={(event) => setPublicKey(event.target.value)}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
               onBlur={() => setPemError(validatePublicKeyPem(publicKey) ?? null)}
               placeholder="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
             />

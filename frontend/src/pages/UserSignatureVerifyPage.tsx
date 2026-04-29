@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { ApiClientError, apiClient } from "../api/client";
+import { SecurityNotice } from "../components/SecurityNotice";
 import { describeApiError } from "../ui/feedback";
 import { useToast } from "../ui/ToastContext";
 
@@ -113,6 +114,10 @@ export function UserSignatureVerifyPage() {
           the private key that matches your registered public key. The backend
           will verify it and return who the signer is.
         </p>
+        <SecurityNotice title="Security note">
+          Paste only the message and the resulting signature. Never paste your
+          private key into this application.
+        </SecurityNotice>
       </section>
 
       <section className="scenario-grid">
@@ -137,6 +142,9 @@ export function UserSignatureVerifyPage() {
                 rows={5}
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 onBlur={() => setMessageError(validateMessage(message) ?? null)}
                 placeholder="Enter the exact message that was signed"
               />
@@ -149,6 +157,9 @@ export function UserSignatureVerifyPage() {
                 rows={7}
                 value={signatureBase64}
                 onChange={(event) => setSignatureBase64(event.target.value)}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 onBlur={() =>
                   setSignatureError(validateSignature(signatureBase64) ?? null)
                 }

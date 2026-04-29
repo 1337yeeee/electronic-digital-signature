@@ -246,6 +246,28 @@ form button,
   color: var(--notice-text);
 }
 
+.security-notice {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(180, 83, 9, 0.08);
+  border: 1px solid rgba(180, 83, 9, 0.14);
+  color: #7c4a03;
+}
+
+.security-notice strong {
+  display: block;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.76rem;
+}
+
+.security-notice p {
+  margin: 0;
+  color: inherit;
+}
+
 .auth-footnote {
   margin: 16px 0 12px;
 }

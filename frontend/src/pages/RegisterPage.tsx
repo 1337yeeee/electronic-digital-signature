@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiBaseUrl, apiClient } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { SecurityNotice } from "../components/SecurityNotice";
 
 type RegisterResponse = {
   success: true;
@@ -153,6 +154,10 @@ export function RegisterPage() {
             <strong>{hasPublicKey ? "Will be attached" : "Optional at registration"}</strong>
           </div>
         </div>
+        <SecurityNotice title="Security note">
+          Paste only a public key here. Never paste a private key, seed phrase,
+          or any secret signing material into the browser UI.
+        </SecurityNotice>
       </section>
 
       <section className="auth-panel">
@@ -233,6 +238,9 @@ export function RegisterPage() {
               rows={8}
               value={publicKey}
               onChange={(event) => setPublicKey(event.target.value)}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
               onBlur={() =>
                 setValidationErrors((current) => ({
                   ...current,

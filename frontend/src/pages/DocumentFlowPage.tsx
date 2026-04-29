@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
+import { SecurityNotice } from "../components/SecurityNotice";
 import { describeApiError } from "../ui/feedback";
 import { useToast } from "../ui/ToastContext";
 
@@ -349,6 +350,11 @@ export function DocumentFlowPage() {
           upload a `.docx`, send the encrypted package, inspect the audit trail,
           and verify-decrypt the package returned from mail.
         </p>
+        <SecurityNotice title="Security note">
+          Treat uploaded package JSON and decrypted document content as
+          sensitive business data. Paste only the package content you actually
+          intend to verify in this browser session.
+        </SecurityNotice>
       </section>
 
       <section className="scenario-grid">
@@ -583,6 +589,9 @@ export function DocumentFlowPage() {
                 rows={12}
                 value={packageJson}
                 onChange={(event) => setPackageJson(event.target.value)}
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 placeholder='{"metadata": {...}, "ciphertext": "..."}'
               />
             </label>
