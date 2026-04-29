@@ -2,11 +2,90 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export type ApiEnvelopeError = {
   success?: false;
-  error?: {
-    code?: string;
-    message?: string;
-  };
+  error?:
+    | {
+        code?: string;
+        message?: string;
+      }
+    | string;
 };
+
+type ApiEnvelopeErrorObject = {
+  code?: string;
+  message?: string;
+};
+
+function parsePayload(text: string): unknown {
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { error: text };
+  }
+}
+
+function normalizeApiError(
+  payload: unknown,
+  status: number
+): { message: string; code?: string } {
+  const envelope = payload as ApiEnvelopeError | undefined;
+  const rawError = envelope?.error;
+
+  if (typeof rawError === "string" && rawError.trim()) {
+    return {
+      message: rawError,
+      code: status === 401 ? "unauthorized" : undefined
+    };
+  }
+
+  const objectError = rawError as ApiEnvelopeErrorObject | undefined;
+  if (objectError?.message) {
+    return {
+      message: objectError.message,
+      code: objectError.code
+    };
+  }
+
+  if (status === 401) {
+    return {
+      message: "Authentication is required.",
+      code: "unauthorized"
+    };
+  }
+  if (status === 403) {
+    return {
+      message: "You do not have permission to perform this action.",
+      code: "forbidden"
+    };
+  }
+  if (status === 404) {
+    return {
+      message: "The requested resource was not found.",
+      code: "not_found"
+    };
+  }
+
+  return {
+    message: `Request failed with status ${status}`
+  };
+}
+
+function normalizeUnauthorizedCode(error: { message: string; code?: string }) {
+  const normalizedMessage = error.message.toLowerCase();
+  if (error.code) {
+    return error.code;
+  }
+  if (normalizedMessage.includes("expired")) {
+    return "token_expired";
+  }
+  if (normalizedMessage.includes("token")) {
+    return "invalid_token";
+  }
+  return "unauthorized";
+}
 
 export class ApiClientError extends Error {
   readonly status: number;
@@ -64,13 +143,17 @@ class ApiClient {
     });
 
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : {};
+    const payload = parsePayload(text);
 
     if (!response.ok) {
-      const apiError = payload as ApiEnvelopeError;
-      const message =
-        apiError.error?.message ?? `Request failed with status ${response.status}`;
-      const error = new ApiClientError(message, response.status, apiError.error?.code);
+      const normalizedError = normalizeApiError(payload, response.status);
+      const error = new ApiClientError(
+        normalizedError.message,
+        response.status,
+        response.status === 401
+          ? normalizeUnauthorizedCode(normalizedError)
+          : normalizedError.code
+      );
 
       if (response.status === 401) {
         this.onUnauthorized?.();

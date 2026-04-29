@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { apiBaseUrl } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { describeApiError } from "../ui/feedback";
+import { useToast } from "../ui/ToastContext";
 
 type LocationState = {
   from?: {
@@ -12,6 +14,7 @@ type LocationState = {
 };
 
 export function LoginPage() {
+  const { pushToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const { accessToken, login, authNotice, clearAuthNotice, isBootstrapping } = useAuth();
@@ -40,9 +43,16 @@ export function LoginPage() {
 
     try {
       await login(email, password);
+      pushToast({
+        title: "Signed in",
+        message: "Welcome back. Your workspace is ready.",
+        tone: "success"
+      });
       navigate(nextPath, { replace: true });
     } catch (error) {
-      setFormError((error as Error).message);
+      const feedback = describeApiError(error);
+      setFormError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsSubmitting(false);
     }

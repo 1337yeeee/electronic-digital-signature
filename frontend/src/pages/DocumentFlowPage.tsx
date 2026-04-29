@@ -1,5 +1,7 @@
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import { apiClient } from "../api/client";
+import { describeApiError } from "../ui/feedback";
+import { useToast } from "../ui/ToastContext";
 
 type ApiEnvelope<T> = {
   success: true;
@@ -92,6 +94,7 @@ function downloadBase64File(base64: string, fileName: string, mimeType: string) 
 }
 
 export function DocumentFlowPage() {
+  const { pushToast } = useToast();
   const [recipientEmail, setRecipientEmail] = useState("recipient@example.com");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -205,8 +208,15 @@ export function DocumentFlowPage() {
         }
       );
       setUploadResult(response.data);
+      pushToast({
+        title: "Document uploaded",
+        message: `Document ${response.data.original_file_name} is ready for sending.`,
+        tone: "success"
+      });
     } catch (error) {
-      setUploadError((error as Error).message);
+      const feedback = describeApiError(error);
+      setUploadError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsUploading(false);
     }
@@ -232,8 +242,15 @@ export function DocumentFlowPage() {
         }
       );
       setSendResult(response.data);
+      pushToast({
+        title: "Package sent",
+        message: `Encrypted package sent to ${response.data.recipient_email}.`,
+        tone: "success"
+      });
     } catch (error) {
-      setSendError((error as Error).message);
+      const feedback = describeApiError(error);
+      setSendError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsSending(false);
     }
@@ -252,8 +269,15 @@ export function DocumentFlowPage() {
         `/documents/${activeDocumentId}/audit`
       );
       setAuditResult(response.data);
+      pushToast({
+        title: "Audit loaded",
+        message: "The document audit trail is now visible below.",
+        tone: "info"
+      });
     } catch (error) {
-      setAuditError((error as Error).message);
+      const feedback = describeApiError(error);
+      setAuditError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsLoadingAudit(false);
     }
@@ -293,8 +317,23 @@ export function DocumentFlowPage() {
           );
 
       setVerifyResult(response.data);
+      pushToast(
+        response.data.valid
+          ? {
+              title: "Package verified",
+              message: "The encrypted package was verified and decrypted successfully.",
+              tone: "success"
+            }
+          : {
+              title: "Package invalid",
+              message: response.data.error || "The package could not be verified.",
+              tone: "warning"
+            }
+      );
     } catch (error) {
-      setVerifyError((error as Error).message);
+      const feedback = describeApiError(error);
+      setVerifyError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsVerifying(false);
     }

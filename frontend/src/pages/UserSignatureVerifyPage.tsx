@@ -1,5 +1,7 @@
 import { FormEvent, useState } from "react";
 import { ApiClientError, apiClient } from "../api/client";
+import { describeApiError } from "../ui/feedback";
+import { useToast } from "../ui/ToastContext";
 
 type VerifyUserSignatureResponse = {
   valid: boolean;
@@ -31,6 +33,7 @@ function validateSignature(value: string): string | undefined {
 }
 
 export function UserSignatureVerifyPage() {
+  const { pushToast } = useToast();
   const [message, setMessage] = useState("I approve the lab scenario and sign this message.");
   const [signatureBase64, setSignatureBase64] = useState("");
   const [messageError, setMessageError] = useState<string | null>(null);
@@ -69,11 +72,31 @@ export function UserSignatureVerifyPage() {
       );
 
       setResult(response);
+      if (response.valid) {
+        pushToast({
+          title: "Signature verified",
+          message: "The server confirmed the signature for the current user.",
+          tone: "success"
+        });
+      } else {
+        pushToast({
+          title: "Invalid signature",
+          message: response.error || "The signature does not match the provided message.",
+          tone: "warning"
+        });
+      }
     } catch (error) {
       if (error instanceof ApiClientError && error.code === "unauthorized") {
         setRequestError("Please sign in again to verify a user signature.");
+        pushToast({
+          title: "Authentication required",
+          message: "Please sign in again to verify a user signature.",
+          tone: "warning"
+        });
       } else {
-        setRequestError((error as Error).message);
+        const feedback = describeApiError(error);
+        setRequestError(feedback.message);
+        pushToast(feedback);
       }
     } finally {
       setIsSubmitting(false);

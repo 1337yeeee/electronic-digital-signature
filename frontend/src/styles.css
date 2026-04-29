@@ -232,6 +232,7 @@ form button,
   border-radius: 16px;
   padding: 12px 14px;
   margin-bottom: 14px;
+  animation: rise-in 180ms ease;
 }
 
 .inline-error {
@@ -488,6 +489,10 @@ form button,
   background: var(--panel-strong);
 }
 
+.panel-soft {
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .inline-panel {
   border-radius: 18px;
   padding: 16px;
@@ -565,6 +570,77 @@ form button,
   filter: blur(6px);
 }
 
+.toast-viewport {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: min(360px, calc(100vw - 24px));
+  display: grid;
+  gap: 10px;
+  z-index: 50;
+}
+
+.toast-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(19, 33, 31, 0.08);
+  box-shadow: var(--shadow);
+  background: rgba(255, 252, 245, 0.96);
+  animation: toast-in 200ms ease;
+}
+
+.toast-card strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.toast-card p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.toast-success {
+  border-left: 5px solid #0f766e;
+}
+
+.toast-info {
+  border-left: 5px solid #155e75;
+}
+
+.toast-warning {
+  border-left: 5px solid #b45309;
+}
+
+.toast-error {
+  border-left: 5px solid #b91c1c;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 960px) {
   .auth-shell,
   .app-shell {
@@ -616,5 +692,12 @@ form button,
   .panel-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .toast-viewport {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    bottom: 12px;
   }
 }

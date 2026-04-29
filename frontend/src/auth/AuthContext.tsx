@@ -15,6 +15,8 @@ import {
   persistSession
 } from "./auth-storage";
 import type { LoginResponse, User } from "../types/auth";
+import { describeApiError } from "../ui/feedback";
+import { useToast } from "../ui/ToastContext";
 
 type AuthContextValue = {
   accessToken: string | null;
@@ -30,6 +32,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { pushToast } = useToast();
   const [accessToken, setAccessToken] = useState<string | null>(() => loadStoredToken());
   const [currentUser, setCurrentUser] = useState<User | null>(() => loadStoredUser());
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -47,12 +50,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onUnauthorized: () => {
         logout();
         setAuthNotice("Session expired. Please log in again.");
+        pushToast({
+          title: "Session expired",
+          message: "Your token expired or became invalid. Please sign in again.",
+          tone: "warning"
+        });
       },
       onForbidden: () => {
         setAuthNotice("Access denied for this action.");
+        pushToast({
+          title: "Access denied",
+          message: "You do not have permission to perform that action.",
+          tone: "warning"
+        });
       }
     });
-  }, [accessToken, logout]);
+  }, [accessToken, logout, pushToast]);
 
   const refreshCurrentUser = useCallback(async () => {
     const response = await apiClient.request<{ data: User }>("/auth/me");
@@ -83,7 +96,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (!(error instanceof ApiClientError) || error.status !== 401) {
-          setAuthNotice((error as Error).message);
+          const feedback = describeApiError(error);
+          setAuthNotice(feedback.message);
+          pushToast(feedback);
         }
         logout();
       } finally {
@@ -98,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, logout]);
+  }, [accessToken, logout, pushToast]);
 
   const login = useCallback(async (email: string, password: string) => {
     const response = await apiClient.request<LoginResponse>("/auth/login", {

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { describeApiError } from "../ui/feedback";
+import { useToast } from "../ui/ToastContext";
 
 type ApiEnvelope<T> = {
   success: true;
@@ -65,6 +67,7 @@ function formatDate(value?: string): string {
 }
 
 export function DocumentDetailsPage() {
+  const { pushToast } = useToast();
   const { id = "" } = useParams();
   const [documentDetails, setDocumentDetails] = useState<DocumentDetails | null>(null);
   const [auditDetails, setAuditDetails] = useState<DocumentAuditResponse | null>(null);
@@ -83,7 +86,9 @@ export function DocumentDetailsPage() {
       );
       setDocumentDetails(response.data);
     } catch (error) {
-      setPageError((error as Error).message);
+      const feedback = describeApiError(error);
+      setPageError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsLoading(false);
     }
@@ -121,9 +126,16 @@ export function DocumentDetailsPage() {
       setActionNotice(
         `Package resent to ${response.data.recipient_email}. Status: ${response.data.send_status}.`
       );
+      pushToast({
+        title: "Package resent",
+        message: `Package resent to ${response.data.recipient_email}.`,
+        tone: "success"
+      });
       await loadDocument();
     } catch (error) {
-      setPageError((error as Error).message);
+      const feedback = describeApiError(error);
+      setPageError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsResending(false);
     }
@@ -141,8 +153,15 @@ export function DocumentDetailsPage() {
         `/documents/${documentDetails.document_id}/audit`
       );
       setAuditDetails(response.data);
+      pushToast({
+        title: "Audit loaded",
+        message: "The audit data for this document is now visible.",
+        tone: "info"
+      });
     } catch (error) {
-      setAuditError((error as Error).message);
+      const feedback = describeApiError(error);
+      setAuditError(feedback.message);
+      pushToast(feedback);
     } finally {
       setIsLoadingAudit(false);
     }
