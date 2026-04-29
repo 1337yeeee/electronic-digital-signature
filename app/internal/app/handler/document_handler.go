@@ -31,6 +31,10 @@ type getDocumentAuditUseCase interface {
 	Execute(ctx context.Context, input usecase.GetDocumentAuditInput) (*model.Document, error)
 }
 
+type getDocumentDetailsUseCase interface {
+	Execute(ctx context.Context, input usecase.GetDocumentDetailsInput) (*model.Document, error)
+}
+
 type listUserDocumentsUseCase interface {
 	Execute(ctx context.Context, input usecase.ListUserDocumentsInput) ([]model.Document, error)
 }
@@ -43,6 +47,7 @@ type DocumentHandler struct {
 	uploadDocumentUseCase       uploadDocumentUseCase
 	sendDocumentUseCase         sendDocumentUseCase
 	getDocumentAuditUseCase     getDocumentAuditUseCase
+	getDocumentDetailsUseCase   getDocumentDetailsUseCase
 	listUserDocumentsUseCase    listUserDocumentsUseCase
 	verifyDecryptPackageUseCase verifyDecryptPackageUseCase
 }
@@ -51,6 +56,7 @@ func NewDocumentHandler(
 	uploadDocumentUseCase uploadDocumentUseCase,
 	sendDocumentUseCase sendDocumentUseCase,
 	getDocumentAuditUseCase getDocumentAuditUseCase,
+	getDocumentDetailsUseCase getDocumentDetailsUseCase,
 	listUserDocumentsUseCase listUserDocumentsUseCase,
 	verifyDecryptPackageUseCase verifyDecryptPackageUseCase,
 ) *DocumentHandler {
@@ -58,6 +64,7 @@ func NewDocumentHandler(
 		uploadDocumentUseCase:       uploadDocumentUseCase,
 		sendDocumentUseCase:         sendDocumentUseCase,
 		getDocumentAuditUseCase:     getDocumentAuditUseCase,
+		getDocumentDetailsUseCase:   getDocumentDetailsUseCase,
 		listUserDocumentsUseCase:    listUserDocumentsUseCase,
 		verifyDecryptPackageUseCase: verifyDecryptPackageUseCase,
 	}
@@ -253,6 +260,58 @@ func (h *DocumentHandler) GetAudit(ctx *gin.Context) {
 
 	respondSuccess(ctx, http.StatusOK, response)
 	logRequestInfo(ctx, "get-document-audit", fmt.Sprintf("document_id=%s owner_user_id=%s signed_by_user_id=%s sent_by_user_id=%s", document.ID, document.OwnerUserID, document.SignedByUserID, document.LastSentByUserID))
+}
+
+func (h *DocumentHandler) GetDocument(ctx *gin.Context) {
+	if h.getDocumentDetailsUseCase == nil {
+		respondError(ctx, http.StatusInternalServerError, "internal_error", "Document details are not available right now.")
+		return
+	}
+
+	currentUser, ok := currentUserFromContext(ctx)
+	if !ok {
+		respondError(ctx, http.StatusUnauthorized, "unauthorized", "Authentication is required.")
+		return
+	}
+
+	document, err := h.getDocumentDetailsUseCase.Execute(ctx.Request.Context(), usecase.GetDocumentDetailsInput{
+		DocumentID: ctx.Param("id"),
+		UserID:     currentUser.ID,
+	})
+	if err != nil {
+		logRequestError(ctx, "get-document", err)
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			respondError(ctx, http.StatusNotFound, "document_not_found", "Document was not found.")
+		case errors.Is(err, usecase.ErrDocumentAccessDenied):
+			respondError(ctx, http.StatusForbidden, "forbidden", "You do not have access to this document.")
+		case err.Error() == "document_id is required":
+			respondError(ctx, http.StatusBadRequest, "document_id_required", "Document id is required.")
+		default:
+			respondError(ctx, http.StatusBadRequest, "document_details_failed", "Document details could not be loaded.")
+		}
+		return
+	}
+
+	response := dto.DocumentDetailsResponse{
+		DocumentID:       document.ID,
+		OwnerUserID:      document.OwnerUserID,
+		SignedByUserID:   document.SignedByUserID,
+		SentByUserID:     document.LastSentByUserID,
+		OwnerEmail:       document.OwnerEmail,
+		RecipientEmail:   document.RecipientEmail,
+		OriginalFileName: document.OriginalFileName,
+		MimeType:         document.MimeType,
+		SendStatus:       document.SendStatus,
+		CreatedAt:        document.CreatedAt.Format(time.RFC3339Nano),
+		SignedAt:         document.SignedAt.Format(time.RFC3339Nano),
+	}
+	if document.SentAt != nil {
+		response.SentAt = document.SentAt.Format(time.RFC3339Nano)
+	}
+
+	respondSuccess(ctx, http.StatusOK, response)
+	logRequestInfo(ctx, "get-document", fmt.Sprintf("document_id=%s owner_user_id=%s signed_by_user_id=%s sent_by_user_id=%s", document.ID, document.OwnerUserID, document.SignedByUserID, document.LastSentByUserID))
 }
 
 func (h *DocumentHandler) ListMyDocuments(ctx *gin.Context) {

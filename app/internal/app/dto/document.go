@@ -50,6 +50,21 @@ type UserDocumentListItemResponse struct {
 	CreatedAt        string `json:"created_at"`
 }
 
+type DocumentDetailsResponse struct {
+	DocumentID       string `json:"document_id"`
+	OwnerUserID      string `json:"owner_user_id"`
+	SignedByUserID   string `json:"signed_by_user_id"`
+	SentByUserID     string `json:"sent_by_user_id,omitempty"`
+	OwnerEmail       string `json:"owner_email"`
+	RecipientEmail   string `json:"recipient_email"`
+	OriginalFileName string `json:"original_file_name"`
+	MimeType         string `json:"mime_type"`
+	SendStatus       string `json:"send_status,omitempty"`
+	CreatedAt        string `json:"created_at"`
+	SignedAt         string `json:"signed_at"`
+	SentAt           string `json:"sent_at,omitempty"`
+}
+
 type VerifyDecryptPackageMetadata struct {
 	DocumentID          string `json:"document_id"`
 	Version             string `json:"version"`

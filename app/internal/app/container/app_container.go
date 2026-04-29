@@ -84,6 +84,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 		encryption.NewDocumentEncryptor(documentStorage),
 		smtpMailer,
 	)
+	getDocumentDetailsUseCase := usecase.NewGetDocumentDetailsUseCase(documentRepository)
 	getDocumentAuditUseCase := usecase.NewGetDocumentAuditUseCase(documentRepository)
 	listUserDocumentsUseCase := usecase.NewListUserDocumentsUseCase(documentRepository)
 	verifyDecryptPackageUseCase := usecase.NewVerifyDecryptPackageUseCase(
@@ -114,6 +115,7 @@ func New(cfg config.Config) (*AppContainer, error) {
 			uploadDocumentUseCase,
 			sendDocumentUseCase,
 			getDocumentAuditUseCase,
+			getDocumentDetailsUseCase,
 			listUserDocumentsUseCase,
 			verifyDecryptPackageUseCase,
 		),

@@ -174,8 +174,8 @@ export function MyDocumentsPage() {
                   >
                     {loadingAuditFor === document.document_id ? "Loading audit..." : "View audit"}
                   </button>
-                  <Link className="secondary-link" to="/app/documents/flow">
-                    Open flow
+                  <Link className="secondary-link" to={`/app/documents/${document.document_id}`}>
+                    Open details
                   </Link>
                 </div>
               </article>

@@ -598,6 +598,7 @@ func TestSendDocumentRouteSendsEncryptedPackageAndStoresStatus(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -687,6 +688,7 @@ func TestSendDocumentRouteReturnsNotFound(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -724,6 +726,7 @@ func TestSendDocumentRouteReturnsForbiddenForForeignOwner(t *testing.T) {
 		DocumentHandler: handler.NewDocumentHandler(
 			nil,
 			usecase.NewSendDocumentUseCase(documentRepository, documentStorage, nil, nil, nil, mailer),
+			nil,
 			nil,
 			nil,
 			nil,
@@ -781,6 +784,7 @@ func TestGetDocumentAuditRoute(t *testing.T) {
 			usecase.NewGetDocumentAuditUseCase(documentRepository),
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -835,6 +839,7 @@ func TestGetDocumentAuditRouteReturnsForbiddenForForeignOwner(t *testing.T) {
 			usecase.NewGetDocumentAuditUseCase(documentRepository),
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -845,6 +850,74 @@ func TestGetDocumentAuditRouteReturnsForbiddenForForeignOwner(t *testing.T) {
 
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusForbidden, response.Code, response.Body.String())
+	}
+}
+
+func TestGetDocumentRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authSession := newTestAuthSession(t)
+	sentAt := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	documentRepository := &fakeDocumentRepository{
+		documents: []model.Document{
+			{
+				ID:               "document-id",
+				OwnerUserID:      authSession.user.ID,
+				SignedByUserID:   authSession.user.ID,
+				LastSentByUserID: authSession.user.ID,
+				OwnerEmail:       authSession.user.Email,
+				RecipientEmail:   "recipient@example.com",
+				OriginalFileName: "contract.docx",
+				MimeType:         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				SendStatus:       usecase.DocumentSendStatusSent,
+				CreatedAt:        time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC),
+				SignedAt:         time.Date(2026, 4, 26, 10, 1, 0, 0, time.UTC),
+				SentAt:           &sentAt,
+			},
+		},
+	}
+
+	router := SetupRouter(&container.AppContainer{
+		AuthMiddleware: newAuthMiddlewareForSession(authSession),
+		DocumentHandler: handler.NewDocumentHandler(
+			nil,
+			nil,
+			nil,
+			usecase.NewGetDocumentDetailsUseCase(documentRepository),
+			nil,
+			nil,
+		),
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/documents/document-id", nil)
+	request.Header.Set("Authorization", "Bearer "+authSession.token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+
+	var envelope struct {
+		Success bool                        `json:"success"`
+		Data    dto.DocumentDetailsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatal("expected success response")
+	}
+	if envelope.Data.OwnerUserID != authSession.user.ID {
+		t.Fatalf("expected owner_user_id %q, got %q", authSession.user.ID, envelope.Data.OwnerUserID)
+	}
+	if envelope.Data.SignedByUserID != authSession.user.ID {
+		t.Fatalf("expected signed_by_user_id %q, got %q", authSession.user.ID, envelope.Data.SignedByUserID)
+	}
+	if envelope.Data.SentByUserID != authSession.user.ID {
+		t.Fatalf("expected sent_by_user_id %q, got %q", authSession.user.ID, envelope.Data.SentByUserID)
+	}
+	if envelope.Data.SendStatus != usecase.DocumentSendStatusSent {
+		t.Fatalf("expected send_status %q, got %q", usecase.DocumentSendStatusSent, envelope.Data.SendStatus)
 	}
 }
 
@@ -893,6 +966,7 @@ func TestListMyDocumentsRoute(t *testing.T) {
 	router := SetupRouter(&container.AppContainer{
 		AuthMiddleware: newAuthMiddlewareForSession(authSession),
 		DocumentHandler: handler.NewDocumentHandler(
+			nil,
 			nil,
 			nil,
 			nil,
@@ -1651,6 +1725,7 @@ func setupProtectedRouterWithDocumentHandler(privateKey []byte, authSession *tes
 			nil,
 			nil,
 			nil,
+			nil,
 		),
 	})
 
@@ -1662,6 +1737,7 @@ func setupRouterWithVerifyDecryptPackageHandler(publicKey []byte) *gin.Engine {
 
 	return SetupRouter(&container.AppContainer{
 		DocumentHandler: handler.NewDocumentHandler(
+			nil,
 			nil,
 			nil,
 			nil,
