@@ -20,6 +20,9 @@ export function AppLayout() {
           <NavLink to="/app/profile">
             Profile
           </NavLink>
+          <NavLink to="/app/server-signed-message">
+            Server Signed
+          </NavLink>
           <NavLink to="/app/signatures/verify">
             Verify Signature
           </NavLink>

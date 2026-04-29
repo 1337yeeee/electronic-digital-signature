@@ -403,6 +403,17 @@ form button,
   flex-wrap: wrap;
 }
 
+.copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.long-value {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  word-break: break-all;
+}
+
 .empty-panel,
 .status-panel {
   background: var(--panel-strong);
