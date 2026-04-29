@@ -32,6 +32,15 @@ async function copyToClipboard(text: string) {
   await navigator.clipboard.writeText(text);
 }
 
+function encodeUtf8Base64(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
 export function ServerSignedMessagePage() {
   const [serverPublicKey, setServerPublicKey] = useState<ServerPublicKeyResponse | null>(null);
   const [publicKeyError, setPublicKeyError] = useState<string | null>(null);
@@ -58,6 +67,35 @@ export function ServerSignedMessagePage() {
       null,
       2
     );
+  }, [result, serverPublicKey]);
+
+  const verificationScript = useMemo(() => {
+    if (!result || !serverPublicKey?.public_key_pem) {
+      return null;
+    }
+
+    const messageBase64 = encodeUtf8Base64(result.message);
+
+    return `#!/usr/bin/env bash
+set -euo pipefail
+
+cat > server_public.pem <<'PEM'
+${serverPublicKey.public_key_pem}
+PEM
+
+cat > message.base64 <<'B64'
+${messageBase64}
+B64
+
+cat > signature.base64 <<'B64'
+${result.signature_base64}
+B64
+
+openssl base64 -d -A -in message.base64 -out message.txt
+openssl base64 -d -A -in signature.base64 -out signature.bin
+
+openssl dgst -sha256 -verify server_public.pem -signature signature.bin message.txt
+`;
   }, [result, serverPublicKey]);
 
   async function loadServerPublicKey() {
@@ -250,6 +288,17 @@ export function ServerSignedMessagePage() {
               >
                 Copy public key
               </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() =>
+                  verificationScript &&
+                  handleCopy("Verification script", verificationScript)
+                }
+                disabled={!verificationScript}
+              >
+                Copy verification script
+              </button>
             </div>
 
             <dl className="details-list">
@@ -290,6 +339,40 @@ export function ServerSignedMessagePage() {
         ) : (
           <div className="empty-panel inline-panel">
             Request a server-signed message to see the verification payload here.
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h3>Copyable verification script</h3>
+            <p>
+              Copy this script into your shell environment to recreate the
+              public key, message and signature locally, then verify them with
+              `openssl`.
+            </p>
+          </div>
+        </div>
+
+        {verificationScript ? (
+          <div className="result-stack">
+            <pre className="code-block">{verificationScript}</pre>
+            <div className="form-actions-row">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => handleCopy("Verification script", verificationScript)}
+              >
+                Copy script
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="empty-panel inline-panel">
+            Load the server public key and request a signed message first. The
+            verification script will be generated automatically from those
+            values.
           </div>
         )}
       </section>
