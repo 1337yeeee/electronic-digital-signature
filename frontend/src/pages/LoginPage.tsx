@@ -7,19 +7,24 @@ type LocationState = {
   from?: {
     pathname?: string;
   };
+  registered?: boolean;
+  registeredEmail?: string;
 };
 
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { accessToken, login, authNotice, clearAuthNotice, isBootstrapping } = useAuth();
-  const [email, setEmail] = useState("web-user@example.com");
+  const locationState = location.state as LocationState | null;
+  const [email, setEmail] = useState(
+    locationState?.registeredEmail ?? "web-user@example.com"
+  );
   const [password, setPassword] = useState("secret-password");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const nextPath =
-    ((location.state as LocationState | null)?.from?.pathname || "/app");
+    (locationState?.from?.pathname || "/app");
 
   useEffect(() => {
     if (!isBootstrapping && accessToken) {
@@ -75,6 +80,11 @@ export function LoginPage() {
             {authNotice}
           </div>
         ) : null}
+        {locationState?.registered ? (
+          <div className="inline-notice" role="status">
+            Registration completed. You can sign in now.
+          </div>
+        ) : null}
         {formError ? (
           <div className="inline-error" role="alert">
             {formError}
@@ -108,12 +118,17 @@ export function LoginPage() {
         </form>
 
         <p className="auth-footnote">
-          Need a user first? Register through the API flow from the backend demo,
-          then return here to continue the authenticated scenarios.
+          Need a user first? Create one directly in the web app and then return
+          here to continue the authenticated scenarios.
         </p>
-        <Link className="secondary-link" to="/app">
-          Try protected route
-        </Link>
+        <div className="auth-actions">
+          <Link className="secondary-link" to="/register">
+            Create account
+          </Link>
+          <Link className="secondary-link" to="/app">
+            Try protected route
+          </Link>
+        </div>
       </section>
     </main>
   );

@@ -177,6 +177,10 @@ form button,
   align-items: start;
 }
 
+.auth-shell-wide {
+  grid-template-columns: 1fr 1fr;
+}
+
 .auth-hero,
 .auth-panel,
 .status-card,
@@ -243,6 +247,26 @@ form button,
 
 .auth-footnote {
   margin: 16px 0 12px;
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.field-hint,
+.field-error {
+  font-size: 0.86rem;
+}
+
+.field-hint {
+  color: #60706b;
+}
+
+.field-error {
+  color: var(--danger-text);
 }
 
 .app-shell {
