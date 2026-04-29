@@ -181,6 +181,21 @@ export function DocumentFlowPage() {
     setVerifyInputError(null);
   }
 
+  async function sendDocument(documentId: string, email: string) {
+    const response = await apiClient.request<ApiEnvelope<SendDocumentResponse>>(
+      `/documents/${documentId}/send`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          email: email.trim()
+        })
+      }
+    );
+
+    setSendResult(response.data);
+    return response.data;
+  }
+
   async function handleUpload(event: FormEvent) {
     event.preventDefault();
 
@@ -203,6 +218,8 @@ export function DocumentFlowPage() {
     formData.append("recipient_email", recipientEmail.trim());
 
     setIsUploading(true);
+    setIsSending(true);
+    let uploadedDocument: UploadDocumentResponse | null = null;
     try {
       const response = await apiClient.request<ApiEnvelope<UploadDocumentResponse>>(
         "/documents",
@@ -211,18 +228,41 @@ export function DocumentFlowPage() {
           body: formData
         }
       );
+      uploadedDocument = response.data;
       setUploadResult(response.data);
       pushToast({
         title: t("scenario3.toastUploadedTitle"),
         message: t("scenario3.toastUploadedMessage", { fileName: response.data.original_file_name }),
         tone: "success"
       });
+
+      const sendResponse = await sendDocument(
+        response.data.document_id,
+        response.data.recipient_email
+      );
+      setSendError(null);
+      pushToast({
+        title: t("scenario3.toastSentTitle"),
+        message: t("scenario3.toastSentMessage", { email: sendResponse.recipient_email }),
+        tone: "success"
+      });
     } catch (error) {
       const feedback = describeApiError(error);
-      setUploadError(feedback.message);
-      pushToast(feedback);
+      if (uploadedDocument) {
+        setSendError(feedback.message);
+        pushToast({
+          title: t("scenario3.toastUploadSendFailedTitle"),
+          message: t("scenario3.toastUploadSendFailedMessage"),
+          tone: "warning"
+        });
+        pushToast(feedback);
+      } else {
+        setUploadError(feedback.message);
+        pushToast(feedback);
+      }
     } finally {
       setIsUploading(false);
+      setIsSending(false);
     }
   }
 
@@ -236,19 +276,10 @@ export function DocumentFlowPage() {
 
     setIsSending(true);
     try {
-      const response = await apiClient.request<ApiEnvelope<SendDocumentResponse>>(
-        `/documents/${activeDocumentId}/send`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            email: recipientEmail.trim()
-          })
-        }
-      );
-      setSendResult(response.data);
+      const response = await sendDocument(activeDocumentId, recipientEmail);
       pushToast({
         title: t("scenario3.toastSentTitle"),
-        message: t("scenario3.toastSentMessage", { email: response.data.recipient_email }),
+        message: t("scenario3.toastSentMessage", { email: response.recipient_email }),
         tone: "success"
       });
     } catch (error) {
