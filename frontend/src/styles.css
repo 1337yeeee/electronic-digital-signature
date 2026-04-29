@@ -414,6 +414,26 @@ form button,
   word-break: break-all;
 }
 
+.top-gap {
+  margin-top: 16px;
+}
+
+.audit-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mode-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.active-pill {
+  box-shadow: inset 0 0 0 1px rgba(20, 83, 45, 0.16);
+  background: rgba(20, 83, 45, 0.16);
+}
+
 .empty-panel,
 .status-panel {
   background: var(--panel-strong);
@@ -536,6 +556,10 @@ form button,
   }
 
   .scenario-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-grid {
     grid-template-columns: 1fr;
   }
 

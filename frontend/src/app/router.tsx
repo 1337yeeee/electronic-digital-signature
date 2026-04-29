@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./layout/AppLayout";
 import { ProtectedRoute } from "../components/ProtectedRoute";
 import { DashboardPage } from "../pages/DashboardPage";
+import { DocumentFlowPage } from "../pages/DocumentFlowPage";
 import { LoginPage } from "../pages/LoginPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { ProfilePage } from "../pages/ProfilePage";
@@ -19,6 +20,7 @@ export function AppRouter() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/app" element={<DashboardPage />} />
+          <Route path="/app/documents/flow" element={<DocumentFlowPage />} />
           <Route path="/app/profile" element={<ProfilePage />} />
           <Route path="/app/server-signed-message" element={<ServerSignedMessagePage />} />
           <Route path="/app/signatures/verify" element={<UserSignatureVerifyPage />} />
